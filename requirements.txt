@@ -1,0 +1,6 @@
+argparse
+pytesseract
+opencv-python
+numpy
+matplotlib
+pandas
