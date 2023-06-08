@@ -54,11 +54,11 @@ cv2.waitKey(0)
 
 #Identify where table is located, draw a bounding box on it since the report doesn't have one
 line_indices = numpy.where(vertical_horizontal_lines == 0)
-x = line_indices[1].min()
-y = line_indices[0].min()
-x1 = line_indices[1].max()
-y1 = line_indices[0].max()
-vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (x, y), (x1, y1), (0, 255, 0), 10)
+table_x = line_indices[1].min()
+table_y = line_indices[0].min()
+table_x1 = line_indices[1].max()
+table_y1 = line_indices[0].max()
+vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 255, 0), 10)
 
 #clean up vertical lines for extending as necessary
 vertical_lines = cv2.erode(~vertical_lines, kernel, iterations=3)
@@ -88,14 +88,14 @@ for line in vert_lines:
     x_end = line[:, 0, 0].max()
 
     #currently, only extends the lines closest to the bottom so that they're touching the bounding box
-    if line_end > y1 - 25 and line_end < y1:
-        im = cv2.rectangle(image, (x_start, line_end), (x_start+5, y1), (255, 255, 0), -1)
-        vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (x_start, line_end), (x_start+5, y1), (0, 0, 0), -1)
+    if line_end > table_y1 - 25 and line_end < table_y1:
+        im = cv2.rectangle(image, (x_start, line_end), (x_start+5, table_y1), (255, 255, 0), -1)
+        vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (x_start, line_end), (x_start+5, table_y1), (0, 0, 0), -1)
 
 
 #extend horizontal lines as needed
 #add bounding box to vertical lines, since we will treat it as vertical lines
-vertical_lines = cv2.rectangle(vertical_lines, (x, y), (x1, y1), (0, 0, 0), 10)
+vertical_lines = cv2.rectangle(vertical_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
 
 #separate individual horizontal lines for extension as needed
 hor_lines = cv2.findContours(horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -138,19 +138,53 @@ cv2.waitKey(0)
 
 
 #isolate table's cells
-contours = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-contours = contours[0] if len(contours) == 2 else contours[1]
+cells = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+cells = cells[0] if len(cells) == 2 else cells[1]
+
+class column:
+    def __init__(self, start, end, label):
+        self.start = start
+        self.end = end
+        self.label = label
+        self.rows = []
 
 boxes = []
-cnts = []
-for contour in contours:
-    x, y, w, h = cv2.boundingRect(contour)
-    if (w<1000 and h<2900 and w>10 and h>10):
-        cnts = cv2.rectangle(image,(x,y),(x+w,y+h),(0,255,0),2)
+cls = []
+x, y, w, h = cv2.boundingRect(cells[-1])
+header_h = y + h
+cols = []
+header_cells = 0
+header_rows = 0
+flag = False
+prev_x = 0
+
+for cell in reversed(cells):
+    x, y, w, h = cv2.boundingRect(cell)
+    img = image[y:y+h, x:x+h]
+    text = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
+
+    if y < header_h-10 and not flag:
+        header_cells += 1
+        if x > prev_x:
+            if len(cols) > 0:
+                cols[-1].end = x
+            cols.append(column(x, table_x1, text))
+            prev_x = x
+        else:
+            prev_x = image.shape[1]
+    else:
+        flag = True
+
+
+
+    if True or (w<1000 and h<2900 and w>10 and h>10):
+        cls = cv2.rectangle(image,(x,y),(x+w,y+h),(0,255,255),2)
         boxes.insert(0, [x,y,w,h])
+        cv2.imshow('cell', image[y:y+h, x:x+w])#cv2.resize(cls, None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
 
 
-cv2.imshow('box', cv2.resize(cnts, None, fx=0.25, fy=0.25))
+cv2.imshow('box', cv2.resize(cls, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
 
 #use tesseract to read text from cells, then write to csv
