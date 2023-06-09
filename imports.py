@@ -152,8 +152,11 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
 
         cells = cells[0] if len(cells) == 2 else cells[1]
 
-        cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
-        cv2.waitKey(0)
+        if not cells:
+            return cols
+
+        # cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
+        # cv2.waitKey(0)
 
         cell = cells[-1]
         cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cell)
@@ -161,94 +164,166 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         img = image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w]
         label = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
 
-        cv2.imshow('cell', image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
-        cv2.waitKey(0)
+        # cv2.imshow('cell', image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
+        # cv2.waitKey(0)
 
         #if cell isn't as tall as the entire section, know there are subheadings. Parse those instead
         if y + cell_y + cell_h < g_h - 10:
             append_label = label
             parse_cells(cell_x + x, cell_y + y + cell_h, cell_x + x + cell_w, g_h, append_label, cols)
         else:
-            cols.append(dict(start_x = cell_x + x, start_y = cell_y + y, height = cell_h, width = cell_w, label = "\n".join([append_label, label])))
+            cols.append(dict(start_x = cell_x + x, start_y = cell_y + y, height = cell_h,
+                             width = cell_w, label = "\n".join([append_label, label]), data = []))
 
         #move to next section
         parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
+        return cols
 
 cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-1])
-parse_cells(table_x, table_y, table_x1, cell_y + cell_h, "", [])
+columns = parse_cells(table_x, table_y, table_x1, cell_y + cell_h, "", [])
 
-class column:
-    def __init__(self, start, end, label):
-        self.start = start
-        self.end = end
-        self.label = label
-        self.rows = []
+#now that heading is extracted, need to extract data as well
+no_lines = cv2.addWeighted(vertical_horizontal_lines, 0.5, img_bin_otsu, 0.5, 0.0)
+#no_lines = cv2.erode(~no_lines, kernel, iterations=3)
+#no_lines = cv2.morphologyEx(no_lines, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
+thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-boxes = []
-cls = []
-x, y, w, h = cv2.boundingRect(cells[-1])
-header_h = y + h
-cols = []
-header_cells = 0
-header_rows = 0
-flag = False
-prev_x = 0
+first_col = no_lines[columns[0]["start_y"]+columns[0]["height"]:table_y1, columns[0]["start_x"]:columns[0]["start_x"]+columns[0]["width"]]
 
-for cell in reversed(cells):
-    x, y, w, h = cv2.boundingRect(cell)
-    img = image[y:y+h, x:x+h]
-    text = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
-
-    if y < header_h-10 and not flag:
-        header_cells += 1
-        if x > prev_x:
-            if len(cols) > 0:
-                cols[-1]["end"] = x
-            cols.append(dict(start = x, end = table_x1, label = text, data = ""))
-            prev_x = x
-
-            #if h < header_h - 10:
-
-
-            #parse_cells(x, y, w, h)
-
-        else:
-            prev_x = image.shape[1]
-    else:
-        flag = True
-
-
-
-    if True or (w<1000 and h<2900 and w>10 and h>10):
-        cls = cv2.rectangle(image,(x,y),(x+w,y+h),(255, 105, 180),2)
-        boxes.insert(0, [x,y,w,h])
-        cv2.imshow('cell', image[y:y+h, x:x+w])#cv2.resize(cls, None, fx=0.25, fy=0.25))
-        cv2.waitKey(0)
-
-
-cv2.imshow('box', cv2.resize(cls, None, fx=0.25, fy=0.25))
+cv2.imshow("first_col", cv2.resize(first_col, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
 
-#use tesseract to read text from cells, then write to csv
-table = []
-cols = 0
-flag = False
-#loop through all boxes to run tesseract
-for box in boxes:
-    img = image[box[1]:box[1]+box[3], box[0]:box[0]+box[2]]
-    if not(flag):
-        if box[1] < boxes[0][1] + boxes[0][3]:
-            cols += 1
-        else:
-            flag = True
+# Dilate to combine adjacent text contours
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4,4))
+dilate = cv2.dilate(first_col, kernel, iterations=2)
 
-    text = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
-    print(text)
-    table.append(text)
+cv2.imshow("dilate", cv2.resize(dilate, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+# Find contours, highlight text areas, and extract ROIs
+cnts = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+
+text_lines = []
+for c in cnts:
+    area = cv2.contourArea(c)
+    x,y,w,h = cv2.boundingRect(c)
+
+    if area > 500 and w > h and h > image.shape[0]/200:
+        # cv2.imshow("text line", cv2.resize(
+        #     image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
+        #     table_x:table_x1], None, fx=0.25, fy=0.25))
+        # cv2.waitKey(0)
+        l_start = y + columns[0]["start_y"] + columns[0]["height"]
+        l_end = y + columns[0]["start_y"] + columns[0]["height"] + h
+
+        test = cv2.rectangle(image, (table_x, l_start),
+                             (table_x1, l_end),
+                             color=(255, 0, 255), thickness=3)
+        text_lines.insert(0, [l_start, l_end])
+
+cv2.imshow("text lines", cv2.resize(test, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+#loop through columns to collect data
+for col in columns:
+    col_im = no_lines[col["start_y"] + col["height"]:table_y1,
+                col["start_x"]:col["start_x"] + col["width"]]
+    # cv2.imshow("col", cv2.resize(col_im, None, fx=0.25, fy=0.25))
+    # cv2.waitKey(0)
+
+    for line in text_lines:
+        cell_im = no_lines[line[0]:line[1], col["start_x"]:col["start_x"] + col["width"]]
+
+        # cv2.imshow("row", cv2.resize(cell_im, None, fx=0.25, fy=0.25))
+        # cv2.waitKey(0)
+        text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
+        col["data"].append(text)
 
 #write to CSV
-table = table + (cols - len(table) % cols) * [""]
-table = numpy.reshape(table, (-1, cols))
-df = pd.DataFrame(data=table)
-df.to_csv("1900pg188.csv")
+labels = [x["label"] for x in columns]
+data = ["" for i in range(0, len(columns)-1)]
+for x in range(0, len(columns)-1):
+    data[x] = columns[x]["data"]
+data = numpy.array(data).T.tolist()
+data.insert(0, labels)
+
+df = pd.DataFrame(data = data)
+df.to_csv("1900pg188.csv", index=False)
+
+#
+# class column:
+#     def __init__(self, start, end, label):
+#         self.start = start
+#         self.end = end
+#         self.label = label
+#         self.rows = []
+#
+# boxes = []
+# cls = []
+# x, y, w, h = cv2.boundingRect(cells[-1])
+# header_h = y + h
+# cols = []
+# header_cells = 0
+# header_rows = 0
+# flag = False
+# prev_x = 0
+#
+# for cell in reversed(cells):
+#     x, y, w, h = cv2.boundingRect(cell)
+#     img = image[y:y+h, x:x+h]
+#     text = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
+#
+#     if y < header_h-10 and not flag:
+#         header_cells += 1
+#         if x > prev_x:
+#             if len(cols) > 0:
+#                 cols[-1]["end"] = x
+#             cols.append(dict(start = x, end = table_x1, label = text, data = ""))
+#             prev_x = x
+#
+#             #if h < header_h - 10:
+#
+#
+#             #parse_cells(x, y, w, h)
+#
+#         else:
+#             prev_x = image.shape[1]
+#     else:
+#         flag = True
+#
+#
+#
+#     if True or (w<1000 and h<2900 and w>10 and h>10):
+#         cls = cv2.rectangle(image,(x,y),(x+w,y+h),(255, 105, 180),2)
+#         boxes.insert(0, [x,y,w,h])
+#         cv2.imshow('cell', image[y:y+h, x:x+w])#cv2.resize(cls, None, fx=0.25, fy=0.25))
+#         cv2.waitKey(0)
+#
+#
+# cv2.imshow('box', cv2.resize(cls, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+#
+# #use tesseract to read text from cells, then write to csv
+# table = []
+# cols = 0
+# flag = False
+# #loop through all boxes to run tesseract
+# for box in boxes:
+#     img = image[box[1]:box[1]+box[3], box[0]:box[0]+box[2]]
+#     if not(flag):
+#         if box[1] < boxes[0][1] + boxes[0][3]:
+#             cols += 1
+#         else:
+#             flag = True
+#
+#     text = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
+#     print(text)
+#     table.append(text)
+#
+# #write to CSV
+# table = table + (cols - len(table) % cols) * [""]
+# table = numpy.reshape(table, (-1, cols))
+# df = pd.DataFrame(data=table)
+# df.to_csv("1900pg188.csv")
 
