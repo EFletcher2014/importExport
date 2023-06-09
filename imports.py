@@ -141,6 +141,42 @@ cv2.waitKey(0)
 cells = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 cells = cells[0] if len(cells) == 2 else cells[1]
 
+
+def parse_cells(x, y, edge, g_h, append_label, cols):
+
+    if x >= edge:
+        return cols
+    else:
+        grid = vertical_horizontal_lines[y:g_h, x:edge]
+        cells = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        cells = cells[0] if len(cells) == 2 else cells[1]
+
+        cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
+
+        cell = cells[-1]
+        cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cell)
+
+        img = image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w]
+        label = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
+
+        cv2.imshow('cell', image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
+
+        #if cell isn't as tall as the entire section, know there are subheadings. Parse those instead
+        if y + cell_y + cell_h < g_h - 10:
+            append_label = label
+            parse_cells(cell_x + x, cell_y + y + cell_h, cell_x + x + cell_w, g_h, append_label, cols)
+        else:
+            cols.append(dict(start_x = cell_x + x, start_y = cell_y + y, height = cell_h, width = cell_w, label = "\n".join([append_label, label])))
+
+        #move to next section
+        parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
+
+cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-1])
+parse_cells(table_x, table_y, table_x1, cell_y + cell_h, "", [])
+
 class column:
     def __init__(self, start, end, label):
         self.start = start
@@ -167,9 +203,15 @@ for cell in reversed(cells):
         header_cells += 1
         if x > prev_x:
             if len(cols) > 0:
-                cols[-1].end = x
-            cols.append(column(x, table_x1, text))
+                cols[-1]["end"] = x
+            cols.append(dict(start = x, end = table_x1, label = text, data = ""))
             prev_x = x
+
+            #if h < header_h - 10:
+
+
+            #parse_cells(x, y, w, h)
+
         else:
             prev_x = image.shape[1]
     else:
@@ -178,7 +220,7 @@ for cell in reversed(cells):
 
 
     if True or (w<1000 and h<2900 and w>10 and h>10):
-        cls = cv2.rectangle(image,(x,y),(x+w,y+h),(0,255,255),2)
+        cls = cv2.rectangle(image,(x,y),(x+w,y+h),(255, 105, 180),2)
         boxes.insert(0, [x,y,w,h])
         cv2.imshow('cell', image[y:y+h, x:x+w])#cv2.resize(cls, None, fx=0.25, fy=0.25))
         cv2.waitKey(0)
