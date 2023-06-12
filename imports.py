@@ -40,6 +40,9 @@ vertical_horizontal_lines = cv2.erode(~vertical_horizontal_lines, kernel, iterat
 vertical_horizontal_lines = cv2.morphologyEx(vertical_horizontal_lines, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
 thresh, vertical_horizontal_lines = cv2.threshold(vertical_horizontal_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
+
+no_lines = cv2.addWeighted(vertical_horizontal_lines, 0.5, img_bin_otsu, 0.5, 0.0)
+
 #clean up horizontal lines in order to extend them as needed
 horizontal_lines = cv2.erode(~horizontal_lines, kernel, iterations=3)
 horizontal_lines = cv2.morphologyEx(horizontal_lines, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
@@ -102,6 +105,8 @@ vertical_lines = cv2.rectangle(vertical_lines, (table_x, table_y), (table_x1, ta
 hor_lines = cv2.findContours(horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
 
+extended_lines = image.copy()
+
 for line in hor_lines:
     line_start = line[:, 0, 0].min()
     line_end = line[:, 0, 0].max()
@@ -115,7 +120,7 @@ for line in hor_lines:
     indices_start = numpy.where(intersecting_lines[:, 0:line_start] == 0)[1]
     if len(indices_start) > 0:
         line_start = indices_start[-1]
-        im = cv2.rectangle(image, (line_start, y), (line[:, 0, 0].min(), y1), (0, 255, 0), -1)
+        extended_lines = cv2.rectangle(extended_lines, (line_start, y), (line[:, 0, 0].min(), y1), (0, 255, 0), -1)
         #cv2.imshow('added', cv2.resize(im, None, fx=0.25, fy=0.25))
         #cv2.waitKey(0)
 
@@ -123,7 +128,7 @@ for line in hor_lines:
     indices_end = numpy.where(intersecting_lines[:, line_end:] == 0)[1]
     if len(indices_end) > 0:
         line_end += indices_end[0]
-        im = cv2.rectangle(image, (line_end - indices_end[0], y), (line_end, y1), (0, 255, 0), -1)
+        extended_lines = cv2.rectangle(extended_lines, (line_end - indices_end[0], y), (line_end, y1), (0, 255, 0), -1)
         #cv2.imshow('added', cv2.resize(im, None, fx=0.25, fy=0.25))
         #cv2.waitKey(0)
 
@@ -131,7 +136,7 @@ for line in hor_lines:
     vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (line_start, y), (line_end, y1), (0, 0, 0), -1)
 
 #highlight areas where lines were extended, then show new lines
-cv2.imshow('added', cv2.resize(im, None, fx=0.25, fy=0.25))
+cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
 
 cv2.imshow('extended lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
@@ -186,10 +191,12 @@ cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-1])
 columns = parse_cells(table_x, table_y, table_x1, cell_y + cell_h, "", [])
 
 #now that heading is extracted, need to extract data as well
-no_lines = cv2.addWeighted(vertical_horizontal_lines, 0.5, img_bin_otsu, 0.5, 0.0)
 #no_lines = cv2.erode(~no_lines, kernel, iterations=3)
 #no_lines = cv2.morphologyEx(no_lines, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
 thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
 
 first_col = no_lines[columns[0]["start_y"]+columns[0]["height"]:table_y1, columns[0]["start_x"]:columns[0]["start_x"]+columns[0]["width"]]
 
@@ -208,10 +215,9 @@ cnts = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 hierarchy = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[1]
 cnts = cnts[0] if len(cnts) == 2 else cnts[1]
 
-parent_text_lines = []
-child_text_lines = []
-child = image.copy()
-parent = image.copy()
+#get all possible lines
+text_lines = []
+hierarchies = []
 
 for i in range(0, len(cnts)):
     c = cnts[i]
@@ -230,88 +236,279 @@ for i in range(0, len(cnts)):
 
         test = []
 
-        # #if overlaps the previous row, ignore
-        # if not text_lines or l_end <= text_lines[0][0]:
-        #     test = cv2.rectangle(image, (table_x, l_start),
-        #                          (table_x1, l_end),
-        #                          color=(255, 0, 255), thickness=3)
-        #     text_lines.insert(0, [l_start, l_end])
-        #
-        # test = cv2.rectangle(image, (table_x, l_start),
-        #                      (table_x1, l_end),
-        #                      color=(255, 0, 255), thickness=3)
-
-        if hier[2] < 0:
-            child_text_lines.insert(0, [l_start, l_end])
-            child = cv2.rectangle(child, (table_x, l_start),
-                             (table_x1, l_end),
-                             color=(255, 0, 255), thickness=3)
-            cv2.imshow("text line", cv2.resize(
-                image[l_start:l_end,
-                table_x:table_x1], None, fx=0.25, fy=0.25))
-            cv2.waitKey(0)
-        else:
-            parent = cv2.rectangle(parent, (table_x, l_start),
-                                 (table_x1, l_end),
-                                 color=(255, 255, 0), thickness=3)
-            parent_text_lines.insert(0, [l_start, l_end])
-
-cv2.imshow("parent", cv2.resize(parent, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
-
-cv2.imshow("child", cv2.resize(child, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
-
-text_lines = []
-temp = 0
-for c in cnts:
-    area = cv2.contourArea(c)
-    x,y,w,h = cv2.boundingRect(c)
-    hier = hierarchy[0][temp]
-
-    if area > 500 and w > h and h > image.shape[0]/200:
-
-        cv2.imshow("text line", cv2.resize(
-            image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
-            table_x:table_x1], None, fx=0.25, fy=0.25))
-        cv2.waitKey(0)
-
-
-        l_start = y + columns[0]["start_y"] + columns[0]["height"]
-        l_end = y + columns[0]["start_y"] + columns[0]["height"] + h
-
-        test = []
-
-        # #if overlaps the previous row, ignore
-        # if not text_lines or l_end <= text_lines[0][0]:
-        #     test = cv2.rectangle(image, (table_x, l_start),
-        #                          (table_x1, l_end),
-        #                          color=(255, 0, 255), thickness=3)
-        #     text_lines.insert(0, [l_start, l_end])
-        #
-        # test = cv2.rectangle(image, (table_x, l_start),
-        #                      (table_x1, l_end),
-        #                      color=(255, 0, 255), thickness=3)
         text_lines.insert(0, [l_start, l_end])
-        temp += 1
+        hierarchies.insert(0, hier)
 
+line_im = image.copy()
+for line in text_lines:
+    line_im = cv2.rectangle(line_im, (table_x, line[0]), (table_x1, line[1]), color = (255, 255, 0), thickness = 3)
+
+
+cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+#calculate suspected line height using mode, remove lines that are too short
 line_height = stats.mode([line[1] - line[0] for line in text_lines])[0]
 
-text_lines_height = [line for line in text_lines if line[1] - line[0] < line_height + 10 and line[1] - line[0] > line_height - 10]
+text_lines_no_short = [line for line in text_lines if line[1] - line[0] >= line_height - 2]
+
+#remove duplicates
+text_lines_no_dup = []
+for line in text_lines_no_short:
+    if line not in text_lines_no_dup:
+        text_lines_no_dup.append(line)
+
+line_im = image.copy()
+for line in text_lines_no_dup:
+    line_im = cv2.rectangle(line_im, (table_x, line[0]), (table_x1, line[1]), color = (255, 255, 0), thickness = 3)
 
 
 
-for i in range(0, len(text_lines_height)):
-    # #if overlaps the previous row, ignore
-    if i == 0 or text_lines_height[i][0] >= text_lines_height[i-1][0]:
-        cv2.imshow("text line", cv2.resize(
-            image[line[0]:line[1],
-            table_x:table_x1], None, fx=0.25, fy=0.25))
-        cv2.waitKey(0)
-        test = cv2.rectangle(image, (table_x, line[0]), (table_x1, line[1]), color = (255, 0, 255), thickness =  3)
-
-cv2.imshow("text lines", cv2.resize(test, None, fx=0.25, fy=0.25))
+cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
+
+
+def handle_overlaps(line_in, comp_lines):
+    if line_in >= len(comp_lines):
+        return comp_lines
+    else:
+
+
+        line = comp_lines[line_in]
+        overlaps = [comp_line for comp_line in text_lines_no_dup if (line[0] > comp_line[0] and line[0] < comp_line[1]) or
+                    (line[1] < comp_line[1] and line[1] > comp_line[0])]
+
+        # overlap = image[line[0]:line[1],
+        #           table_x:table_x1].copy()
+        #
+        # cv2.imshow(" ".join(["overlap: ", str(line[0]), str(line[1])]), overlap)
+        # cv2.waitKey(0)
+
+        if not overlaps:
+            return handle_overlaps(line_in + 1, comp_lines)
+        else:
+            return handle_overlaps(line_in, split(line_in, overlaps[0], comp_lines))
+
+def split(line_in, comp_line, comp_lines):
+    new_lines = []
+    line = comp_lines[line_in]
+
+    # overlap creates three distinct lines
+    new_lines.append([min(line[0], comp_line[0]), max(line[0], comp_line[0])])
+    new_lines.append([max(line[0], comp_line[0]), min(line[1], comp_line[1])])
+    new_lines.append([min(line[1], comp_line[1]), max(line[1], comp_line[1])])
+
+    # overlap = image[min(line[0], comp_line[0]): max(line[1], comp_line[1]),
+    #     table_x:table_x1].copy()
+    # overlap = cv2.rectangle(overlap, (0, line[0]-min(line[0], comp_line[0])), (table_x1, line[1] - min(line[0], comp_line[0])), color = (255, 0, 255), thickness = 5)
+    # overlap = cv2.rectangle(overlap, (0, comp_line[0] - min(line[0], comp_line[0])), (table_x1, comp_line[1] - min(line[0], comp_line[0])), color = (255, 255, 0), thickness = 3)
+    #
+    # cv2.imshow(" ".join(["overlap: ", str(line[0]), str(line[1]), str(comp_line[0]), str(comp_line[1])]), overlap)
+    # cv2.waitKey(0)
+
+    #if new lines are big enough to stand alone, let them. Otherwise merge
+    l = 0
+    while l < len(new_lines):
+        li = new_lines[l]
+        if li[1] - li[0] <= line_height - 2:
+            if l < len(new_lines)-1:
+                new_lines[l+1][0] = li[0]
+            else:
+                new_lines[l - 1][1] = li[1]
+
+            new_lines.remove(li)
+        else:
+            l += 1
+    comp_lines.remove(line)
+    comp_lines.remove(comp_line)
+
+    for x in range(0, len(new_lines)):
+        comp_lines.insert(line_in + x, new_lines[x])
+    return comp_lines
+
+text_lines_no_overlap = handle_overlaps(0, text_lines_no_dup)
+text_lines_no_overlap.sort()
+
+line_im = image.copy()
+for line in text_lines_no_overlap:
+    line_im = cv2.rectangle(line_im, (table_x, line[0]), (table_x1, line[1]), color = (255, 255, 0), thickness = 3)
+
+
+cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+
+#
+#
+# #loop through lines and identify if they overlap, handle
+# i = 0
+# while i < len(text_lines_no_short):
+#     line = text_lines_no_short[i]
+#
+#     j = 0
+#
+#     while j < len(text_lines_no_short):
+#         comp_line = text_lines_no_short[j]
+#         if (line[0] > comp_line[0] and line[0] < comp_line[1]) or (line[1] < comp_line[1] and line[1] > comp_line[0]):
+#             #handle overlap
+#             mi = min(line[0], comp_line[0])
+#             ma = max(line[1], comp_line[1])
+#             overlap = image[min(line[0], comp_line[0]): max(line[1], comp_line[1]),
+#                 table_x:table_x1].copy()
+#             overlap = cv2.rectangle(overlap, (0, line[0]-mi), (table_x1, line[1] - mi), color = (255, 0, 255), thickness = 5)
+#             overlap = cv2.rectangle(overlap, (0, comp_line[0] - mi), (table_x1, comp_line[1] - mi), color = (255, 255, 0), thickness = 3)
+#             # cv2.imshow(" ".join(["overlap: ", str(line[0]), str(line[1]), str(comp_line[0]), str(comp_line[1])]), overlap)
+#             # cv2.waitKey(0)
+#
+#             #overlap creates three distinct lines
+#             o1 = [mi, max(line[0], comp_line[0])]
+#             o2 = [max(line[0], comp_line[0]), min(line[1], comp_line[1])]
+#             o3 = [min(line[1], comp_line[1]), ma]
+#
+#             #if each line is big enough to stand alone, let it. otherwise, merge
+#             if o1[1] - o1[0] > line_height - 2:
+#                 line = o1
+#             else:
+#                 o1 = []
+#                 o2[0] = mi
+#
+#             if o2[1] - o2[0] > line_height - 2:
+#                 text_lines_no_short[j] = o2
+#             else:
+#                 o3[0] = o2[1]
+#                 o2 = []
+#
+#             #if overlap is smaller than a few pixels, save largest possible line and delete the other
+#             # if abs(line[0] - comp_line[0]) < 3 and abs(line[1] - comp_line[1]) < 3:
+#             #     line[0] = mi
+#             #     line[1] = ma
+#             #     text_lines_no_short.remove(comp_line)
+#             # else:
+#             #     #otherwise, split overlap into 3 new lines
+#             #     o1 = [mi, max(line[0], comp_line[0])]
+#             #     o2 = [max(line[0], comp_line[0]), min(line[1], comp_line[1])]
+#             #     o3 = [min(line[1], comp_line[1]), ma]
+#             #
+#             #     line = o1
+#             #     text_lines_no_short[j] = o2
+#             #     text_lines_no_short.insert(j+1, o3)
+#
+#
+#
+#         j += 1
+#     i += 1
+#
+# line_im = image.copy()
+# for line in text_lines_no_short:
+#     line_im = cv2.rectangle(line_im, (table_x, line[0]), (table_x1, line[1]), color = (255, 255, 0), thickness = 3)
+#
+#
+# cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+
+#
+#
+# parent_text_lines = []
+# child_text_lines = []
+# child = image.copy()
+# parent = image.copy()
+#
+# for i in range(0, len(cnts)):
+#     c = cnts[i]
+#     area = cv2.contourArea(c)
+#     x, y, w, h = cv2.boundingRect(c)
+#     hier = hierarchy[0][i]
+#
+#     if area > 500 and w > h and h > image.shape[0] / 200:
+#         # cv2.imshow("text line", cv2.resize(
+#         #     image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
+#         #     table_x:table_x1], None, fx=0.25, fy=0.25))
+#         # cv2.waitKey(0)
+#
+#         l_start = y + columns[0]["start_y"] + columns[0]["height"]
+#         l_end = y + columns[0]["start_y"] + columns[0]["height"] + h
+#
+#         test = []
+#
+#         # #if overlaps the previous row, ignore
+#         # if not text_lines or l_end <= text_lines[0][0]:
+#         #     test = cv2.rectangle(image, (table_x, l_start),
+#         #                          (table_x1, l_end),
+#         #                          color=(255, 0, 255), thickness=3)
+#         #     text_lines.insert(0, [l_start, l_end])
+#         #
+#         # test = cv2.rectangle(image, (table_x, l_start),
+#         #                      (table_x1, l_end),
+#         #                      color=(255, 0, 255), thickness=3)
+#
+#         if hier[2] < 0:
+#             child_text_lines.insert(0, [l_start, l_end])
+#             child = cv2.rectangle(child, (table_x, l_start),
+#                              (table_x1, l_end),
+#                              color=(255, 0, 255), thickness=3)
+#             cv2.imshow("text line", cv2.resize(
+#                 image[l_start:l_end,
+#                 table_x:table_x1], None, fx=0.25, fy=0.25))
+#             cv2.waitKey(0)
+#         else:
+#             parent = cv2.rectangle(parent, (table_x, l_start),
+#                                  (table_x1, l_end),
+#                                  color=(255, 255, 0), thickness=3)
+#             parent_text_lines.insert(0, [l_start, l_end])
+#
+# cv2.imshow("parent", cv2.resize(parent, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+#
+# cv2.imshow("child", cv2.resize(child, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+#
+# text_lines = []
+# temp = 0
+# for c in cnts:
+#     area = cv2.contourArea(c)
+#     x,y,w,h = cv2.boundingRect(c)
+#     hier = hierarchy[0][temp]
+#
+#     if area > 500 and w > h and h > image.shape[0]/200:
+#
+#         cv2.imshow("text line", cv2.resize(
+#             image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
+#             table_x:table_x1], None, fx=0.25, fy=0.25))
+#         cv2.waitKey(0)
+#
+#
+#         l_start = y + columns[0]["start_y"] + columns[0]["height"]
+#         l_end = y + columns[0]["start_y"] + columns[0]["height"] + h
+#
+#         test = []
+#
+#         # #if overlaps the previous row, ignore
+#         # if not text_lines or l_end <= text_lines[0][0]:
+#         #     test = cv2.rectangle(image, (table_x, l_start),
+#         #                          (table_x1, l_end),
+#         #                          color=(255, 0, 255), thickness=3)
+#         #     text_lines.insert(0, [l_start, l_end])
+#         #
+#         # test = cv2.rectangle(image, (table_x, l_start),
+#         #                      (table_x1, l_end),
+#         #                      color=(255, 0, 255), thickness=3)
+#         text_lines.insert(0, [l_start, l_end])
+#         temp += 1
+#
+#
+#
+#
+# for i in range(0, len(text_lines_height)):
+#     # #if overlaps the previous row, ignore
+#     if i == 0 or text_lines_height[i][0] >= text_lines_height[i-1][0]:
+#         cv2.imshow("text line", cv2.resize(
+#             image[line[0]:line[1],
+#             table_x:table_x1], None, fx=0.25, fy=0.25))
+#         cv2.waitKey(0)
+#         test = cv2.rectangle(image, (table_x, line[0]), (table_x1, line[1]), color = (255, 0, 255), thickness =  3)
+#
+# cv2.imshow("text lines", cv2.resize(test, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 #loop through columns to collect data
 for col in columns:
@@ -320,11 +517,11 @@ for col in columns:
     # cv2.imshow("col", cv2.resize(col_im, None, fx=0.25, fy=0.25))
     # cv2.waitKey(0)
 
-    for line in text_lines:
-        cell_im = no_lines[line[0]:line[1], col["start_x"]:col["start_x"] + col["width"]]
+    for line in text_lines_no_overlap:
+        cell_im = no_lines[line[0]:line[1], col["start_x"]-100:col["start_x"] + col["width"]]
 
-        # cv2.imshow("row", cv2.resize(cell_im, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(0)
+        cv2.imshow("row", cell_im)
+        cv2.waitKey(0)
         text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
         col["data"].append(text)
 
