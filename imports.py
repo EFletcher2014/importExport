@@ -171,12 +171,14 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         if y + cell_y + cell_h < g_h - 10:
             append_label = label
             parse_cells(cell_x + x, cell_y + y + cell_h, cell_x + x + cell_w, g_h, append_label, cols)
+            parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, "", cols)
         else:
             cols.append(dict(start_x = cell_x + x, start_y = cell_y + y, height = cell_h,
                              width = cell_w, label = "\n".join([append_label, label]), data = []))
+            parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
 
         #move to next section
-        parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
+        #parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
         return cols
 
 cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-1])
@@ -210,6 +212,8 @@ for c in cnts:
     x,y,w,h = cv2.boundingRect(c)
 
     if area > 500 and w > h and h > image.shape[0]/200:
+        #TODO: if overlaps the previous row, ignore
+
         # cv2.imshow("text line", cv2.resize(
         #     image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
         #     table_x:table_x1], None, fx=0.25, fy=0.25))
@@ -242,14 +246,14 @@ for col in columns:
 
 #write to CSV
 labels = [x["label"] for x in columns]
-data = ["" for i in range(0, len(columns)-1)]
-for x in range(0, len(columns)-1):
+data = ["" for i in range(0, len(columns))]
+for x in range(0, len(columns)):
     data[x] = columns[x]["data"]
 data = numpy.array(data).T.tolist()
-data.insert(0, labels)
+#data.insert(0, labels)
 
 df = pd.DataFrame(data = data)
-df.to_csv("1900pg188.csv", index=False)
+df.to_csv(str(args["image"]).replace(".tif", ".csv"), index=False, header = labels)
 
 #
 # class column:
