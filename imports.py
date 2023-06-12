@@ -4,6 +4,7 @@ import argparse
 import numpy
 import math
 import pandas as pd
+from scipy import stats
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
@@ -204,27 +205,110 @@ cv2.waitKey(0)
 
 # Find contours, highlight text areas, and extract ROIs
 cnts = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+hierarchy = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[1]
 cnts = cnts[0] if len(cnts) == 2 else cnts[1]
 
-text_lines = []
-for c in cnts:
+parent_text_lines = []
+child_text_lines = []
+child = image.copy()
+parent = image.copy()
+
+for i in range(0, len(cnts)):
+    c = cnts[i]
     area = cv2.contourArea(c)
-    x,y,w,h = cv2.boundingRect(c)
+    x, y, w, h = cv2.boundingRect(c)
+    hier = hierarchy[0][i]
 
-    if area > 500 and w > h and h > image.shape[0]/200:
-        #TODO: if overlaps the previous row, ignore
-
+    if area > 500 and w > h and h > image.shape[0] / 200:
         # cv2.imshow("text line", cv2.resize(
         #     image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
         #     table_x:table_x1], None, fx=0.25, fy=0.25))
         # cv2.waitKey(0)
+
         l_start = y + columns[0]["start_y"] + columns[0]["height"]
         l_end = y + columns[0]["start_y"] + columns[0]["height"] + h
 
-        test = cv2.rectangle(image, (table_x, l_start),
+        test = []
+
+        # #if overlaps the previous row, ignore
+        # if not text_lines or l_end <= text_lines[0][0]:
+        #     test = cv2.rectangle(image, (table_x, l_start),
+        #                          (table_x1, l_end),
+        #                          color=(255, 0, 255), thickness=3)
+        #     text_lines.insert(0, [l_start, l_end])
+        #
+        # test = cv2.rectangle(image, (table_x, l_start),
+        #                      (table_x1, l_end),
+        #                      color=(255, 0, 255), thickness=3)
+
+        if hier[2] < 0:
+            child_text_lines.insert(0, [l_start, l_end])
+            child = cv2.rectangle(child, (table_x, l_start),
                              (table_x1, l_end),
                              color=(255, 0, 255), thickness=3)
+            cv2.imshow("text line", cv2.resize(
+                image[l_start:l_end,
+                table_x:table_x1], None, fx=0.25, fy=0.25))
+            cv2.waitKey(0)
+        else:
+            parent = cv2.rectangle(parent, (table_x, l_start),
+                                 (table_x1, l_end),
+                                 color=(255, 255, 0), thickness=3)
+            parent_text_lines.insert(0, [l_start, l_end])
+
+cv2.imshow("parent", cv2.resize(parent, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+cv2.imshow("child", cv2.resize(child, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+text_lines = []
+temp = 0
+for c in cnts:
+    area = cv2.contourArea(c)
+    x,y,w,h = cv2.boundingRect(c)
+    hier = hierarchy[0][temp]
+
+    if area > 500 and w > h and h > image.shape[0]/200:
+
+        cv2.imshow("text line", cv2.resize(
+            image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
+            table_x:table_x1], None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
+
+
+        l_start = y + columns[0]["start_y"] + columns[0]["height"]
+        l_end = y + columns[0]["start_y"] + columns[0]["height"] + h
+
+        test = []
+
+        # #if overlaps the previous row, ignore
+        # if not text_lines or l_end <= text_lines[0][0]:
+        #     test = cv2.rectangle(image, (table_x, l_start),
+        #                          (table_x1, l_end),
+        #                          color=(255, 0, 255), thickness=3)
+        #     text_lines.insert(0, [l_start, l_end])
+        #
+        # test = cv2.rectangle(image, (table_x, l_start),
+        #                      (table_x1, l_end),
+        #                      color=(255, 0, 255), thickness=3)
         text_lines.insert(0, [l_start, l_end])
+        temp += 1
+
+line_height = stats.mode([line[1] - line[0] for line in text_lines])[0]
+
+text_lines_height = [line for line in text_lines if line[1] - line[0] < line_height + 10 and line[1] - line[0] > line_height - 10]
+
+
+
+for i in range(0, len(text_lines_height)):
+    # #if overlaps the previous row, ignore
+    if i == 0 or text_lines_height[i][0] >= text_lines_height[i-1][0]:
+        cv2.imshow("text line", cv2.resize(
+            image[line[0]:line[1],
+            table_x:table_x1], None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
+        test = cv2.rectangle(image, (table_x, line[0]), (table_x1, line[1]), color = (255, 0, 255), thickness =  3)
 
 cv2.imshow("text lines", cv2.resize(test, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
