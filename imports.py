@@ -168,6 +168,11 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cell)
 
         img = image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w]
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        img = cv2.erode(img, kernel, iterations=1)
+        img = cv2.dilate(img, kernel, iterations=1)
+
         label = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
 
         # cv2.imshow('cell', image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
@@ -339,6 +344,8 @@ cv2.waitKey(0)
 
 
 #loop through columns to collect data
+columns[0]["start_x"] -= 100
+columns[0]["width"] += 100
 for col in columns:
     col_im = no_lines[col["start_y"] + col["height"]:table_y1,
                 col["start_x"]:col["start_x"] + col["width"]]
@@ -346,10 +353,14 @@ for col in columns:
     # cv2.waitKey(0)
 
     for line in text_lines_no_overlap:
-        cell_im = no_lines[line[0]:line[1], col["start_x"]-100:col["start_x"] + col["width"]]
+        cell_im = no_lines[line[0]:line[1], col["start_x"]:col["start_x"] + col["width"]]
 
-        cv2.imshow("row", cell_im)
-        cv2.waitKey(0)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        cell_im = cv2.erode(cell_im, kernel, iterations=1)
+        cell_im = cv2.dilate(cell_im, kernel, iterations=1)
+
+        # cv2.imshow("row", cell_im)
+        # cv2.waitKey(0)
         text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
         col["data"].append(text)
 
