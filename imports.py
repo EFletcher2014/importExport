@@ -356,12 +356,34 @@ for col in columns:
     for line in text_lines_no_overlap:
         cell_im = no_lines[line[0]:line[1], col["start_x"]:col["start_x"] + col["width"]]
 
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
         cell_im = cv2.erode(cell_im, kernel, iterations=1)
         cell_im = cv2.dilate(cell_im, kernel, iterations=1)
 
+        # # apply a "closing" morphological operation to connect components
+        # # in the image
+        # cell_im = cv2.morphologyEx(cell_im, cv2.MORPH_CLOSE, kernel)
+        #
+        # # apply an "opening" morphological operation to disconnect components
+        # # in the image
+        # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
+        # cell_im = cv2.morphologyEx(cell_im, cv2.MORPH_OPEN, kernel)
+
+        # Find contours, highlight text areas, and extract ROIs
+        cnts = cv2.findContours(cell_im, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+
+        for c in cnts:
+            # compute the bounding box of the contour
+            (x, y, w, h) = cv2.boundingRect(c)
+            # check if contour is at least 35px wide and 100px tall, and if
+            # so, consider the contour a digit
+            if h < 4 or w < 3:
+                cell_im = cv2.drawContours(cell_im, [c], 0, (0, 0, 0), -1)
+
         # cv2.imshow(" ".join(["row:", str(line[0]), str(line[1])]), cell_im)
         # cv2.waitKey(0)
+
         text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
         col["data"].append(text)
 
