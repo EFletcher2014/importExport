@@ -19,7 +19,7 @@ image = cv2.imread(args["image"])
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 img_bin_otsu = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 7)
 cv2.imshow('original', cv2.resize(image, None, fx=0.25, fy=0.25))
-cv2.imshow('thresh', cv2.resize(img_bin_otsu, None, fx=0.25, fy=0.25))
+# cv2.imshow('thresh', cv2.resize(img_bin_otsu, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
 
 #extract tables
@@ -49,12 +49,12 @@ horizontal_lines = cv2.morphologyEx(horizontal_lines, cv2.MORPH_OPEN, cv2.getStr
 horizontal_lines = ~horizontal_lines
 
 
-cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
-
-
-cv2.imshow('original lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+#
+#
+# cv2.imshow('original lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 #Identify where table is located, draw a bounding box on it since the report doesn't have one
 line_indices = numpy.where(vertical_horizontal_lines == 0)
@@ -70,11 +70,11 @@ vertical_lines = cv2.morphologyEx(vertical_lines, cv2.MORPH_OPEN, cv2.getStructu
 temp, vertical_lines = cv2.threshold(vertical_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
 
-cv2.imshow('lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
-
-cv2.imshow('vert', cv2.resize(~vertical_lines, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow('lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+#
+# cv2.imshow('vert', cv2.resize(~vertical_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 
 #get individual vertical lines to extend as needed
@@ -136,8 +136,8 @@ for line in hor_lines:
     vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (line_start, y), (line_end, y1), (0, 0, 0), -1)
 
 #highlight areas where lines were extended, then show new lines
-cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 cv2.imshow('extended lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
@@ -200,20 +200,20 @@ columns = parse_cells(table_x, table_y, table_x1, cell_y + cell_h, "", [])
 #no_lines = cv2.morphologyEx(no_lines, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
 thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 first_col = no_lines[columns[0]["start_y"]+columns[0]["height"]:table_y1, columns[0]["start_x"]:columns[0]["start_x"]+columns[0]["width"]]
 
-cv2.imshow("first_col", cv2.resize(first_col, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow("first_col", cv2.resize(first_col, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 # Dilate to combine adjacent text contours
 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4,4))
 dilate = cv2.dilate(first_col, kernel, iterations=2)
 
-cv2.imshow("dilate", cv2.resize(dilate, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow("dilate", cv2.resize(dilate, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 # Find contours, highlight text areas, and extract ROIs
 cnts = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -249,8 +249,8 @@ for line in text_lines:
     line_im = cv2.rectangle(line_im, (table_x, line[0]), (table_x1, line[1]), color = (255, 255, 0), thickness = 3)
 
 
-cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 #calculate suspected line height using mode, remove lines that are too short
 line_height = stats.mode([line[1] - line[0] for line in text_lines])[0]
@@ -269,8 +269,8 @@ for line in text_lines_no_dup:
 
 
 
-cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
-cv2.waitKey(0)
+# cv2.imshow("text lines", cv2.resize(line_im, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
 
 
 def handle_overlaps(line_in, comp_lines):
@@ -280,7 +280,7 @@ def handle_overlaps(line_in, comp_lines):
 
 
         line = comp_lines[line_in]
-        overlaps = [comp_line for comp_line in text_lines_no_dup if (line[0] > comp_line[0] and line[0] < comp_line[1]) or
+        overlaps = [comp_line for comp_line in comp_lines if (line[0] > comp_line[0] and line[0] < comp_line[1]) or
                     (line[1] < comp_line[1] and line[1] > comp_line[0])]
 
         # overlap = image[line[0]:line[1],
@@ -329,6 +329,7 @@ def split(line_in, comp_line, comp_lines):
 
     for x in range(0, len(new_lines)):
         comp_lines.insert(line_in + x, new_lines[x])
+    comp_lines.sort()
     return comp_lines
 
 text_lines_no_overlap = handle_overlaps(0, text_lines_no_dup)
@@ -359,7 +360,7 @@ for col in columns:
         cell_im = cv2.erode(cell_im, kernel, iterations=1)
         cell_im = cv2.dilate(cell_im, kernel, iterations=1)
 
-        # cv2.imshow("row", cell_im)
+        # cv2.imshow(" ".join(["row:", str(line[0]), str(line[1])]), cell_im)
         # cv2.waitKey(0)
         text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
         col["data"].append(text)
