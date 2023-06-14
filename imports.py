@@ -6,6 +6,31 @@ import math
 import pandas as pd
 from scipy import stats
 
+def clean_cell(x, y, w, h):
+    cell_im = no_lines[y:y+h, x:x+w]
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+    cell_im = cv2.erode(cell_im, kernel, iterations=1)
+    cell_im = cv2.dilate(cell_im, kernel, iterations=1)
+
+    # Find contours, highlight text areas, and extract ROIs
+    cnts = cv2.findContours(cell_im, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+
+    for c in cnts:
+        # compute the bounding box of the contour
+        (x, y, w, h) = cv2.boundingRect(c)
+        # check if contour is at least 35px wide and 100px tall, and if
+        # so, consider the contour a digit
+        if h < 4 or w < 3:
+            cell_im = cv2.drawContours(cell_im, [c], 0, (0, 0, 0), -1)
+
+    # cv2.imshow("clean", cell_im)
+    # cv2.waitKey(0)
+
+    return cell_im
+
+
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-i", "--image", required=True,
@@ -148,6 +173,12 @@ cells = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APP
 cells = cells[0] if len(cells) == 2 else cells[1]
 
 
+thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+# cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+
+
 def parse_cells(x, y, edge, g_h, append_label, cols):
 
     if x >= edge:
@@ -167,19 +198,21 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         cell = cells[-1]
         cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cell)
 
-        img = image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w]
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        img = cv2.erode(img, kernel, iterations=1)
-        img = cv2.dilate(img, kernel, iterations=1)
+        img = clean_cell(x+cell_x, y+cell_y, cell_w, cell_h)
 
         label = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
 
-        # cv2.imshow('cell', image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
+        if label == "":
+            label = str(pytesseract.image_to_string(img, config="--psm 7", lang='engorig'))
+
+        # cv2.imshow(label, image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
         # cv2.waitKey(0)
 
         #if cell isn't as tall as the entire section, know there are subheadings. Parse those instead
         if y + cell_y + cell_h < g_h - 10:
+            if append_label != "":
+                label = "\n".join([append_label, label])
+
             append_label = label
             parse_cells(cell_x + x, cell_y + y + cell_h, cell_x + x + cell_w, g_h, append_label, cols)
             parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, "", cols)
@@ -192,24 +225,32 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         #parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
         return cols
 
-cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-1])
-columns = parse_cells(table_x, table_y, table_x1, cell_y + cell_h, "", [])
+cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-2])
+
+col1_width = cv2.boundingRect(cells[-1])[2]
+
+#expect one more heading
+# cv2.imshow("final heading", cv2.resize(image[table_y:cell_y+cell_h+66, table_x:table_x1], None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+
+vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (table_x + col1_width, cell_y + cell_h + 66), (table_x1, cell_y + cell_h + 66), (0, 0, 0), 3)
+
+
+# cv2.imshow('heading', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+
+columns = parse_cells(table_x, table_y, table_x1, cell_y + cell_h + 66, "", [])
+
+
 
 #now that heading is extracted, need to extract data as well
-#no_lines = cv2.erode(~no_lines, kernel, iterations=3)
-#no_lines = cv2.morphologyEx(no_lines, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
-thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+first_col = no_lines[columns[1]["start_y"]+columns[1]["height"]:table_y1, columns[1]["start_x"]:columns[1]["start_x"]+columns[1]["width"]]
 
-# cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
-# cv2.waitKey(0)
-
-first_col = no_lines[columns[0]["start_y"]+columns[0]["height"]:table_y1, columns[0]["start_x"]:columns[0]["start_x"]+columns[0]["width"]]
-
-# cv2.imshow("first_col", cv2.resize(first_col, None, fx=0.25, fy=0.25))
-# cv2.waitKey(0)
+cv2.imshow("first_col", cv2.resize(first_col, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
 
 # Dilate to combine adjacent text contours
-kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4,4))
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 dilate = cv2.dilate(first_col, kernel, iterations=2)
 
 # cv2.imshow("dilate", cv2.resize(dilate, None, fx=0.25, fy=0.25))
@@ -230,9 +271,10 @@ for i in range(0, len(cnts)):
     x, y, w, h = cv2.boundingRect(c)
     hier = hierarchy[0][i]
 
-    if area > 500 and w > h and h > image.shape[0] / 200:
+    if area > 200 and w > h and h > image.shape[0] / 300:
         # cv2.imshow("text line", cv2.resize(
-        #     image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["start_y"] + columns[0]["height"] + h,
+        #     image[y + columns[0]["start_y"] + columns[0]["height"]:y + columns[0]["star
+        #     t_y"] + columns[0]["height"] + h,
         #     table_x:table_x1], None, fx=0.25, fy=0.25))
         # cv2.waitKey(0)
 
@@ -285,11 +327,17 @@ def handle_overlaps(line_in, comp_lines):
 
         # overlap = image[line[0]:line[1],
         #           table_x:table_x1].copy()
-        #
+
         # cv2.imshow(" ".join(["overlap: ", str(line[0]), str(line[1])]), overlap)
         # cv2.waitKey(0)
 
         if not overlaps:
+
+            #if line is tall enough to be split, split it
+            if line[1] - line[0] >= (line_height * 2) - 10:
+                end = line[1]
+                line[1] = math.floor((end - line[0])/2) + line[0]
+                comp_lines.insert(line_in + 1, [line[1], end])
             return handle_overlaps(line_in + 1, comp_lines)
         else:
             return handle_overlaps(line_in, split(line_in, overlaps[0], comp_lines))
@@ -315,7 +363,7 @@ def split(line_in, comp_line, comp_lines):
     l = 0
     while l < len(new_lines):
         li = new_lines[l]
-        if li[1] - li[0] <= line_height - 2:
+        if li[1] - li[0] <= line_height - 6:
             if l < len(new_lines)-1:
                 new_lines[l+1][0] = li[0]
             else:
@@ -354,35 +402,8 @@ for col in columns:
     # cv2.waitKey(0)
 
     for line in text_lines_no_overlap:
-        cell_im = no_lines[line[0]:line[1], col["start_x"]:col["start_x"] + col["width"]]
 
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-        cell_im = cv2.erode(cell_im, kernel, iterations=1)
-        cell_im = cv2.dilate(cell_im, kernel, iterations=1)
-
-        # # apply a "closing" morphological operation to connect components
-        # # in the image
-        # cell_im = cv2.morphologyEx(cell_im, cv2.MORPH_CLOSE, kernel)
-        #
-        # # apply an "opening" morphological operation to disconnect components
-        # # in the image
-        # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
-        # cell_im = cv2.morphologyEx(cell_im, cv2.MORPH_OPEN, kernel)
-
-        # Find contours, highlight text areas, and extract ROIs
-        cnts = cv2.findContours(cell_im, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-
-        for c in cnts:
-            # compute the bounding box of the contour
-            (x, y, w, h) = cv2.boundingRect(c)
-            # check if contour is at least 35px wide and 100px tall, and if
-            # so, consider the contour a digit
-            if h < 4 or w < 3:
-                cell_im = cv2.drawContours(cell_im, [c], 0, (0, 0, 0), -1)
-
-        # cv2.imshow(" ".join(["row:", str(line[0]), str(line[1])]), cell_im)
-        # cv2.waitKey(0)
+        cell_im = clean_cell(col["start_x"], line[0], col["width"], line[1]-line[0])
 
         text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
         col["data"].append(text)
@@ -395,6 +416,6 @@ for x in range(0, len(columns)):
 data = numpy.array(data).T.tolist()
 #data.insert(0, labels)
 
-df = pd.DataFrame(data = data)
-df.to_csv(str(args["image"]).replace(".tif", ".csv"), index=False, header = labels)
+df = pd.DataFrame(data = [row[1:] for row in data])
+df.to_csv(str(args["image"]).replace(".tif", ".csv"), index=False, header = labels[1:])
 
