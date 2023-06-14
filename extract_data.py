@@ -45,14 +45,14 @@ for row in table:
             #check if this has already been added, in that case just alter appropriate columns
             duplicates = []
             if len(output) > 0:
-                duplicates = ["\n\n".join(columns[c].split("\n\n")[0:-2]) in r["description"] and r["origin"] == row[0] for r in output]
+                duplicates = [r["description"]=="\n\n".join(columns[c].split("\n\n")[0:-2]) and r["origin"] == row[0] for r in output]
             if len(output) > 0 and len(duplicates) > 0 and any(duplicates):
                 set_value(duplicates.index(True), c, row[c])
             else:
                 output.append(dict(origin = row[0], destination = "United States",
                                    value = None, value_measure = None,
                                    quantity = None, quantity_measure = None,
-                                   description = columns[c],
+                                   description = "\n\n".join(columns[c].split("\n\n")[0:-2]),
                                    report_name = args["file"].split("/")[-1].replace(".csv", ""),
                                    year = None,
                                    page_number = None))
