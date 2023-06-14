@@ -1,8 +1,17 @@
 import argparse
 import pandas as pd
+import math
 
 def clean_str(s):
     return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "")
+
+def set_value(i, c, val):
+    if "doll" in str(columns[c]).lower():
+        output[i]["value"] = val
+        output[i]["value_measure"] = str(columns[c]).split("\n\n")[-2]
+    else:
+        output[i]["quantity"] = val
+        output[i]["quantity_measure"] = str(columns[c]).split("\n\n")[-2]
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
@@ -10,7 +19,9 @@ ap.add_argument("-f", "--file", required=True,
     help="path to input csv to be parsed")
 args = vars(ap.parse_args())
 
-table = pd.read_csv(args["file"]).values.tolist()
+csv = pd.read_csv(args["file"])
+table = csv.values.tolist()
+columns = csv.columns.tolist()
 
 #find cells that are likely to contain relevant data
 contain_data = [[clean_str(cell).isnumeric() for cell in row] for row in table]
@@ -22,9 +33,31 @@ data = [table[r] for r in range(0, len(table)) if contain_data_row[r] == True]
 clean_data = [[clean_str(data[r][c]) if contain_data_col[c] == True else data[r][c] for c in range(0, len(data[0]))] for r in range(0, len(data))]
 
 
+#table originally organized as row representing country/locale and column representing imported merchandise
+#want to translate into output that is organized as individual import instances (i.e furs from Argentina, gold from Germany, etc)
+#loop through rows and add to output when a given column has a value
 
-#columns: source, destination, description, quantity, quantity measure,
-#           value, weight, weight measure, item category, year, report name,
-#           page number
+output = []
+for row in table:
+    for c in range(0, len(row)):
+        if contain_data_col[c] and (type(row[c])==str or not math.isnan(row[c])):
 
-output = dict(source_historic_name = "", )
+            #check if this has already been added, in that case just alter appropriate columns
+            duplicates = []
+            if len(output) > 0:
+                duplicates = ["\n\n".join(columns[c].split("\n\n")[0:-2]) in r["description"] and r["origin"] == row[0] for r in output]
+            if len(output) > 0 and len(duplicates) > 0 and any(duplicates):
+                set_value(duplicates.index(True), c, row[c])
+            else:
+                output.append(dict(origin = row[0], destination = "United States",
+                                   value = None, value_measure = None,
+                                   quantity = None, quantity_measure = None,
+                                   description = columns[c],
+                                   report_name = args["file"].split("/")[-1].replace(".csv", ""),
+                                   year = None,
+                                   page_number = None))
+                set_value(-1, c, row[c])
+
+
+df = pd.DataFrame(data = output)
+df.to_csv(str(args["file"]).replace(".csv", "output.csv"), index=False, header = list(output[0].keys()))
