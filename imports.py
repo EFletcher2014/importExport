@@ -4,7 +4,12 @@ import argparse
 import numpy
 import math
 import pandas as pd
+import string
 from scipy import stats
+
+def clean_str(s):
+    return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "").replace("-", "")
+
 
 def clean_cell(x, y, w, h):
     cell_im = no_lines[y:y+h, x:x+w]
@@ -413,9 +418,18 @@ labels = [x["label"] for x in columns]
 data = ["" for i in range(0, len(columns))]
 for x in range(0, len(columns)):
     data[x] = columns[x]["data"]
-data = numpy.array(data).T.tolist()
+table = numpy.array(data).T.tolist()
 #data.insert(0, labels)
 
-df = pd.DataFrame(data = [row[1:] for row in data])
-df.to_csv(str(args["image"]).replace(".tif", ".csv"), index=False, header = labels[1:])
+#Clean data
+# first: find cells that are likely to contain relevant data
+contain_data = [[clean_str(cell).isnumeric() for cell in row] for row in table]
+contain_data_row = [any(row) for row in contain_data]
+contain_data_col = [any([row[c] for row in contain_data]) for c in range(0, len(contain_data[0]))]
+data = [table[r] for r in range(0, len(table)) if contain_data_row[r] == True]
+
+clean_data = [[clean_str(table[r][c]) if contain_data_col[c] == True else str(table[r][c]).replace(".", "") for c in range(0, len(table[0]))] for r in range(0, len(table))]
+
+df = pd.DataFrame(data = [row[1:] for row in clean_data])
+df.to_csv(str(args["image"]).replace(".tif", ".csv"), index=False, header = [str(row).translate(str.maketrans('', '', string.punctuation)) for row in labels][1:])
 
