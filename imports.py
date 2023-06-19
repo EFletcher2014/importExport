@@ -101,11 +101,11 @@ vertical_lines = cv2.morphologyEx(vertical_lines, cv2.MORPH_OPEN, cv2.getStructu
 temp, vertical_lines = cv2.threshold(vertical_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
 
-# cv2.imshow('lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
-# cv2.waitKey(0)
-#
-# cv2.imshow('vert', cv2.resize(~vertical_lines, None, fx=0.25, fy=0.25))
-# cv2.waitKey(0)
+cv2.imshow('lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+cv2.imshow('vert', cv2.resize(~vertical_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
 
 
 #get individual vertical lines to extend as needed
@@ -116,8 +116,18 @@ vert_lines = vert_lines[0] if len(vert_lines) == 2 else vert_lines[1]
 #extend vertical lines
 im = []
 blank_image = numpy.zeros((image.shape[0], image.shape[1], 3), numpy.uint8)
+extended_lines = image.copy()
+
+
+
+#add bounding box to horizontal lines, since we will treat it as horizontal lines
+horizontal_lines = ~horizontal_lines
+horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
+cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
 
 for line in vert_lines:
+    line_start = line[:, 0, 1].min()
     line_end = line[:, 0, 1].max()
     x_start = line[:, 0, 0].min()
     x_end = line[:, 0, 0].max()
@@ -127,16 +137,53 @@ for line in vert_lines:
         im = cv2.rectangle(image, (x_start, line_end), (x_start+5, table_y1), (255, 255, 0), -1)
         vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (x_start, line_end), (x_start+5, table_y1), (0, 0, 0), -1)
 
+    # find all horizontal lines intersecting this column
+    intersecting_lines = horizontal_lines[:, x_start:x_end]
+
+    # extend start of lines if needed
+    indices_start = numpy.where(intersecting_lines[0:line_start, :] == 0)[0]
+    if len(indices_start) > 0:
+        line_start = indices_start[-1]
+        extended_lines = cv2.line(extended_lines, (x_start, line_end), (x_end, line_start), (0, 255, 0), 3)
+        # cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
+        # cv2.waitKey(0)
+
+    # extend end of lines if needed
+    indices_end = numpy.where(intersecting_lines[line_end:, :] == 0)[0]
+    if len(indices_end) > 0:
+        line_end += indices_end[0]
+        extended_lines = cv2.line(extended_lines, (x_start, line_end - indices_end[0]), (x_end, line_end), (0, 255, 0), 3)
+        # cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
+        # cv2.waitKey(0)
+
+    # update main image of table boundaries to reflect extended lines
+    vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (x_start, line_end), (x_end, line_start), (0, 0, 0), 3)
+    vertical_lines = cv2.line(vertical_lines, (x_start, line_end), (x_end, line_start), (0, 0, 0), 3)
+
+#highlight areas where lines were extended, then show new lines
+# cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
+# cv2.waitKey(0)
+
+cv2.imshow('extended lines_vert', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
 
 #extend horizontal lines as needed
 #add bounding box to vertical lines, since we will treat it as vertical lines
 vertical_lines = cv2.rectangle(vertical_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
 
-#separate individual horizontal lines for extension as needed
-hor_lines = cv2.findContours(horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
 
-extended_lines = image.copy()
+cv2.imshow("vert_lines", cv2.resize(vertical_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+#separate individual horizontal lines for extension as needed
+horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (255, 255, 255), 10)
+
+
+cv2.imshow("hor_lines1", cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
+
+hor_lines = cv2.findContours(~horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
 
 for line in hor_lines:
     line_start = line[:, 0, 0].min()
@@ -167,8 +214,8 @@ for line in hor_lines:
     vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (line_start, y), (line_end, y1), (0, 0, 0), -1)
 
 #highlight areas where lines were extended, then show new lines
-# cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
-# cv2.waitKey(0)
+cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
+cv2.waitKey(0)
 
 cv2.imshow('extended lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
 cv2.waitKey(0)
