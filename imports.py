@@ -6,6 +6,7 @@ import math
 import pandas as pd
 import string
 from scipy import stats
+from textblob import TextBlob
 
 def clean_str(s):
     return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "").replace("-", "")
@@ -210,6 +211,10 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         if label == "":
             label = str(pytesseract.image_to_string(img, config="--psm 7", lang='engorig'))
 
+        tb = TextBlob(label)
+
+        label = str(tb.correct())
+
         # cv2.imshow(label, image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
         # cv2.waitKey(0)
 
@@ -411,6 +416,11 @@ for col in columns:
         cell_im = clean_cell(col["start_x"], line[0], col["width"], line[1]-line[0])
 
         text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
+
+        tb = TextBlob(text)
+
+        text = str(tb.correct())
+
         col["data"].append(text)
 
 #write to CSV
