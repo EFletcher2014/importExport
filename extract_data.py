@@ -66,9 +66,9 @@ for f in files:
                                        value = None, value_measure = None,
                                        quantity = None, quantity_measure = None,
                                        description = "\n\n".join(columns[c].split("\n\n")[0:-2]),
-                                       report_name = file_path.split("/")[-1].replace(".csv", ""),
-                                       year = None,
-                                       page_number = None))
+                                       report_name = None,
+                                       year = file_path.split("/")[-3],
+                                       page_number = f.replace(".csv", "")))
                     set_value(-1, c, row[c])
 
 
@@ -78,4 +78,4 @@ for f in files:
         output_path = "".join([args["directory"].replace(args["directory"].split("/")[-1], "").replace("//", "/"), "output.csv"])
         df.to_csv(output_path, index=False, header = list(output[0].keys()))
     else:
-        df.to_csv(output_path, mode='a', index=False, header=list(output[0].keys()))
+        df.to_csv(output_path, mode='a', index=False, header = False)

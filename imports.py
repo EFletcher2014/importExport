@@ -9,6 +9,7 @@ from scipy import stats
 from textblob import TextBlob
 import os
 import imutils
+import string
 
 def clean_str(s):
     return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "").replace("-", "")
@@ -60,10 +61,10 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
 
         img = clean_cell(x+cell_x, y+cell_y, cell_w, cell_h)
 
-        label = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig'))
+        label = str(pytesseract.image_to_string(img, config="--psm 12", lang='engorig')).replace(",", "").replace(";", "")
 
         if label == "":
-            label = str(pytesseract.image_to_string(img, config="--psm 7", lang='engorig'))
+            label = str(pytesseract.image_to_string(img, config="--psm 7", lang='engorig')).replace(",", "").replace(";", "")
 
         tb = TextBlob(label)
 
@@ -518,7 +519,7 @@ for file in files:
 
             cell_im = clean_cell(col["start_x"], line[0], col["width"], line[1]-line[0])
 
-            text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig'))
+            text = str(pytesseract.image_to_string(cell_im, config="--psm 12", lang='engorig')).replace(",", "").replace(";", "")
 
             tb = TextBlob(text)
 
