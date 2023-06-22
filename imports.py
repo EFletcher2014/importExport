@@ -301,7 +301,13 @@ for file in files:
             vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (x_start, line_end), (x_start+5, table_y1), (0, 0, 0), -1)
 
         # find all horizontal lines intersecting this column
-        intersecting_lines = vertical_horizontal_lines[:, x_start-5:x_end+5]
+        intersecting_lines = vertical_horizontal_lines[:, x_start-7:x_end+7]
+
+        # cv2.imshow('line', cv2.resize(vertical_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
+        # cv2.waitKey(100)
+        #
+        # cv2.imshow('intersect', cv2.resize(vertical_horizontal_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
+        # cv2.waitKey(0)
 
         # extend start of lines if needed
         indices_start = numpy.where(intersecting_lines[0:line_start, :] == 0)[0]
@@ -548,6 +554,5 @@ for file in files:
     df.to_csv("/".join([output_directory, file.replace(".tif", ".csv")]), index=False, header = [str(row).translate(str.maketrans('', '', string.punctuation)) for row in labels][1:])
 
     print(" ".join(["file", file, "completed"]))
-
     cv2.destroyAllWindows()
 
