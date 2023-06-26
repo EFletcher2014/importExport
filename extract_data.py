@@ -53,7 +53,7 @@ for f in files:
     output = []
     for row in table:
         for c in range(0, len(row)):
-            if contain_data_col[c] and (type(row[c])==str or not math.isnan(row[c])) and not "total" in row[0].lower():
+            if contain_data_col[c] and (type(row[c])==str or not math.isnan(row[c])) and not "total" in str(row[0]).lower():
 
                 #check if this has already been added, in that case just alter appropriate columns
                 duplicates = []

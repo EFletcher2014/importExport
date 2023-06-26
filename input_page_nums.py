@@ -25,7 +25,7 @@ class SimpleDialog(Frame):
 
         # Create an object of tkinter ImageTk
         img = Image.open(self.image)
-        img = img.resize([math.floor(img.width/8), math.floor(img.height/8)])
+        img = img.resize([math.floor(img.width/4), math.floor(img.height/4)])
         img = ImageTk.PhotoImage(img)
 
         # Create a Label Widget to display the text or Image

@@ -19,7 +19,7 @@ def remove_punct(s):
 
 def getImage(p, path):
     url = "".join(["https://babel.hathitrust.org/cgi/htd/volume/pageimage/", doc_id, "/", str(p)])
-    r = rsession.get(url, params={'v': str(2), 'res': str(0)})
+    r = rsession.get(url, params={'v': str(2), 'height': str(3400)})
     r.raise_for_status()
     im = r.content
     im = Image.open(io.BytesIO(im))
@@ -85,7 +85,7 @@ while l < len(lines) and section_starts == -1:
 
 #download images for those pages
 for p in range(section_starts, section_ends):
-    print("downloading page " + p)
+    print("downloading page " + str(p))
     getImage(p, "".join(["/home/emily/Downloads/", date, "/temp_images/", str(p), ".tiff"]))
 
 print("complete")
