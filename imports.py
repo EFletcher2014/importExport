@@ -11,7 +11,7 @@ import os
 import imutils
 import string
 
-SHOW_IMAGES = True
+SHOW_IMAGES = False
 
 def clean_str(s):
     return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "").replace("-", "")
@@ -599,7 +599,7 @@ for file in files:
             #     cv2.imshow("cell", cv2.resize(cell_im, None, fx=0.25, fy=0.25))
             #     cv2.waitKey(100)
 
-            text = parse_text(cell_im)#, num_only=(col != columns[0]))
+            text = parse_text(cell_im, num_only=(col != columns[0]))
 
             tb = TextBlob(text)
 
