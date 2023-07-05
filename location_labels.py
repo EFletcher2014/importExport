@@ -14,6 +14,8 @@ ap.add_argument("-d", "--directory", required=True,
     help="path to directory containing location labels")
 ap.add_argument("-i", "--input", required=True,
     help="path to file containing labels to clean")
+ap.add_argument("-c", "--correctLabels", required=True,
+                help="T if country names should be corrected, F if they should be maintained")
 args = vars(ap.parse_args())
 
 stop_words = ["Kingdom of", "Emirate of"]
@@ -33,7 +35,7 @@ def query(q_string):
         results_df = pd.json_normalize(results['results']['bindings'])
         contains_data_results = ["value" in col for col in results_df.columns]
         results_list = [[row[c] for c in range(0, len(row)) if contains_data_results[c]] for row in results_df.values]
-        return results_list
+        return results_list, [col.replace(".value", "") for col in results_df.columns if "value" in col]
     except Exception as e:
         return e
 
@@ -73,11 +75,11 @@ def get_territories():
             PREFIX gas: <http://www.bigdata.com/rdf/gas#>
             PREFIX hint: <http://www.bigdata.com/queryHints#>
 
-            SELECT DISTINCT ?titleLabel ?subtitleLabel ?loc ?loc2 WHERE {
+            SELECT DISTINCT ?titleLabel ?subtitleLabel ?loc WHERE {
               SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
               {
 
-                SELECT DISTINCT ?title ?subtitle ?loc ?loc2 WHERE {
+                SELECT DISTINCT ?title ?subtitle ?loc WHERE {
 
                 ?title p:P31|p:P279 ?isTerritory.
                 ?isTerritory ps:P31|ps:P279 wd:Q26934845.
@@ -153,8 +155,8 @@ def get_canadian_provinces():
             }
             }""")
 
-def get_country_subdivisions(date):
-    return query(f"""
+def get_country_subdivisions(years):
+    query_s = f"""
             PREFIX wd: <http://www.wikidata.org/entity/>
             PREFIX wds: <http://www.wikidata.org/entity/statement/>
             PREFIX wdv: <http://www.wikidata.org/value/>
@@ -229,8 +231,15 @@ def get_country_subdivisions(date):
                       ?endCorrectTimeValue wikibase:timeValue ?end.
                     }}
                   
-                    FILTER(?beginning < "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime &&
-                       (?end > "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime || !BOUND(?end)))
+                    FILTER("""
+
+    dates = ""
+    for year in years:
+        dates = "".join([dates, f"""(?beginning < "+{str(year).split(" ")[0]}T{str(year).split(" ")[1]}Z"^^xsd:dateTime &&
+                  (?end2 > "+{str(year).split(" ")[0]}T{str(year).split(" ")[1]}Z"^^xsd:dateTime || !BOUND(?end2)))""",
+                         "\n\t\t || "])
+
+    end = f""")
                 }}}}
                   
                 OPTIONAL{{
@@ -244,15 +253,16 @@ def get_country_subdivisions(date):
                       ?regionEndCorrectTime psv:P576 ?regionEndCorrectTimeValue.
                       ?regionEndCorrectTimeValue wikibase:timeValue ?region_end.
                 }}
-                #FILTER(?region_beginning < "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime &&
-                       #(?region_end > "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime || !BOUND(?region_end)))
               }}
             }}
-            }}""")
+            }}"""
+    query_s = "".join([query_s, dates[0:-7], end])
+
+    return query(query_s)
 
 
-def get_countries(date):
-    return query(f"""SELECT DISTINCT ?countryLabel ?loc WHERE {{
+def get_countries(years):
+    query_s = f"""SELECT DISTINCT ?countryLabel ?loc WHERE {{
       SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
       {{
             SELECT DISTINCT ?country ?loc WHERE {{
@@ -276,14 +286,27 @@ def get_countries(date):
                 ?hasLoc ps:P625 ?loc.
               }}
           
-            FILTER(?beginning < "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime &&
-              (?end2 > "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime || !BOUND(?end2)))
-        }}}}
-    }}""")
+            FILTER("""
+
+    dates = ""
+    for year in years:
+        dates = "".join([dates, f"""(?beginning < "+{str(year).split(" ")[0]}T{str(year).split(" ")[1]}Z"^^xsd:dateTime &&
+              (?end2 > "+{str(year).split(" ")[0]}T{str(year).split(" ")[1]}Z"^^xsd:dateTime || !BOUND(?end2)))""", "\n\t\t || "])
+
+    end = f""")
+            }}}}
+        }}"""
+    query_s = "".join([query_s, dates[0:-7], end])
 
 
-def get_geographic_regions(date):
-    return query(f"""
+
+
+
+    return query(query_s)
+
+
+def get_geographic_regions(years):
+    query_s = f"""
             PREFIX wd: <http://www.wikidata.org/entity/>
             PREFIX wds: <http://www.wikidata.org/entity/statement/>
             PREFIX wdv: <http://www.wikidata.org/value/>
@@ -341,37 +364,22 @@ def get_geographic_regions(date):
                       ?endCorrectTime psv:P576 ?endCorrectTimeValue.
                       ?endCorrectTimeValue wikibase:timeValue ?region_end.
                   }} 
-                  #FILTER(?region_beginning < "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime &&
-                       #(?region_end > "+{str(date).split(" ")[0]}T{str(date).split(" ")[1]}Z"^^xsd:dateTime || !BOUND(?region_end)))
+                  FILTER("""
+
+    dates = ""
+    for year in years:
+        dates = "".join([dates, f"""(?region_beginning < "+{str(year).split(" ")[0]}T{str(year).split(" ")[1]}Z"^^xsd:dateTime &&
+                  (?region_end > "+{str(year).split(" ")[0]}T{str(year).split(" ")[1]}Z"^^xsd:dateTime || !BOUND(?region_end)))""",
+                         "\n\t\t || "])
+
+    end = f""")
             
               }}
             }}
-            }}""")
-date = datetime.datetime.strptime(str(1900), "%Y")
-territories = get_territories()
-territories = [row for row in territories if "Point(" in str(row)]
-ca_provinces = get_canadian_provinces()
-[territories.append(row + ["nan"]) for row in ca_provinces]
-countries = get_countries(date)
-countries = [row for row in countries if "Point(" in str(row)]
+            }}"""
+    query_s = "".join([query_s, dates[0:-7], end])
 
-subdivisions = get_country_subdivisions(date)
-subdivisions = [row for row in subdivisions if "Point(" in str(row) and not str(row[3]).replace("Q", "").isnumeric()]
-
-geo_words = get_geographic_regions(date)
-geo_words = [row for row in geo_words if "Point(" in str(row)]
-
-df = pd.DataFrame(data = territories)
-df.to_csv("".join([str(args["directory"]), "/territories.csv"]), index = False, header = False)
-
-df = pd.DataFrame(data = countries)
-df.to_csv("".join([str(args["directory"]), "/countries.csv"]), index = False, header = False)
-
-df = pd.DataFrame(data = subdivisions)
-df.to_csv("".join([str(args["directory"]), "/subdivisions.csv"]), index = False, header = False)
-
-df = pd.DataFrame(data = geo_words)
-df.to_csv("".join([str(args["directory"]), "/geo_words.csv"]), index = False, header = False)
+    return query(query_s)
 
 def remove_stop_words(s):
     for word in stop_words:
@@ -389,10 +397,86 @@ def unique(list1):
             unique_list.append(x)
     return unique_list
 
+def get_coords(w):
+    countries_exact_match = [w in c for c in c_names]
+    if any(countries_exact_match):
+        return 0, countries[[m for m in range(0, len(countries_exact_match)) if countries_exact_match[m]][0]][
+                                c_cols.index("loc")]
+    else:
+        subdivisions_exact_match = [input_countries[c_ind] in s_names]
+        if any(subdivisions_exact_match):
+            return 0, subdivisions[[m for m in subdivisions_exact_match if m][0]][s_cols.index("loc")]
+        else:
+            territories_exact_match = [input_countries[c_ind] in t_names]
+            if any(territories_exact_match):
+                return 0, territories[[m for m in territories_exact_match if m][0]][t_cols.index("loc")]
+            else:
+                if low_full_cer < 0.5:
+                    if low_full_cer == low_full_c_cer:
+                        return low_full_cer, countries[full_c_cers.index(low_full_c_cer)][c_cols.index("loc")]
+                    else:
+                        if low_full_cer == low_full_s_cer:
+                            return low_full_cer, subdivisions[full_s_cers.index(low_full_s_cer)][s_cols.index("loc")]
+                        else:
+                            if low_full_cer == low_full_t_cer:
+                                return low_full_cer, territories[full_t_cers.index(low_full_t_cer)][t_cols.index("loc")]
+                else:
+                    return 1, "Point(0 0)"
 
-c_names = [row[0] for row in countries]
-s_names = [row[3] for row in subdivisions]
-t_names = [row[1] if str(row[2]) == "nan" else row[2] for row in territories]
+input = pd.read_csv(args["input"])
+input_values = input.values.tolist()
+input_columns = input.columns.tolist()
+input_columns = [str(col).lower() for col in input_columns]
+input_years = [row[input_columns.index("year")] for row in input_values]
+unique_years = unique(input_years)
+unique_years = [datetime.datetime.strptime(str(year), "%Y") for year in unique_years]
+input_countries = [row[input_columns.index("origin")] for row in input_values]
+input_countries = [c.replace("\n", "") for c in input_countries]
+input_countries = [c for c in input_countries if c != ""]
+
+clean_labels = args["correctLabels"]
+
+if clean_labels == "T":
+    clean_labels = True
+else:
+    clean_labels = False
+
+label_cers = []
+label_coords = []
+coords_cer = []
+
+
+territories, t_cols = get_territories()
+territories = [row for row in territories if "Point(" in str(row)]
+ca_provinces, p_cols = get_canadian_provinces()
+[territories.append(row + ["nan"]) for row in ca_provinces]
+
+countries, c_cols = get_countries(unique_years)
+
+subdivisions, s_cols = get_country_subdivisions(unique_years)
+
+geo_words, g_cols = get_geographic_regions(unique_years)
+
+
+countries = [row for row in countries if "Point(" in str(row)]
+subdivisions = [row for row in subdivisions if "Point(" in str(row) and not str(row[s_cols.index("regionLabel")]).replace("Q", "").isnumeric()]
+geo_words = [row for row in geo_words if "Point(" in str(row)]
+
+df = pd.DataFrame(data = territories)
+df.to_csv("".join([str(args["directory"]), "/territories.csv"]), index = False, header = False)
+
+df = pd.DataFrame(data = countries)
+df.to_csv("".join([str(args["directory"]), "/countries.csv"]), index = False, header = False)
+
+df = pd.DataFrame(data = subdivisions)
+df.to_csv("".join([str(args["directory"]), "/subdivisions.csv"]), index = False, header = False)
+
+df = pd.DataFrame(data = geo_words)
+df.to_csv("".join([str(args["directory"]), "/geo_words.csv"]), index = False, header = False)
+
+c_names = [row[c_cols.index("countryLabel")] for row in countries]
+s_names = [row[s_cols.index("regionLabel")] for row in subdivisions]
+t_names = [row[t_cols.index("titleLabel")] if str(row[t_cols.index("subtitleLabel")]) == "nan" else row[t_cols.index("subtitleLabel")] for row in territories]
 
 c_vocab = []
 [[c_vocab.append(word) for word in loc.split(" ")] for loc in c_names]
@@ -408,17 +492,6 @@ t_vocab = []
 [[t_vocab.append(word) for word in loc.split(" ")] for loc in t_names]
 t_vocab = unique(t_vocab)
 t_vocab = [word for word in t_vocab if any(c.isalpha() for c in word)]
-
-input = pd.read_csv(args["input"])
-input_values = input.values.tolist()
-input_columns = input.columns.tolist()
-input_countries = [row[input_columns.index("origin")] for row in input_values]
-input_countries = [c.replace("\n", "") for c in input_countries]
-input_countries = [c for c in input_countries if c != ""]
-
-label_cers = []
-label_coords = []
-coords_cer = []
 
 c_ind = 0
 for c_ind in range(0, len(input_countries)):
@@ -473,89 +546,29 @@ for c_ind in range(0, len(input_countries)):
 
     low_full_cer = min(low_full_c_cer, low_full_s_cer, low_full_t_cer)
 
-    coords_cer.append(low_full_cer)
 
-    countries_exact_match = [input_countries[c_ind] in c for c in c_names]
-    if any(countries_exact_match):
-        label_coords.append(countries[[m for m in range(0, len(countries_exact_match)) if countries_exact_match[m]][0]][1])
-    else:
-        subdivisions_exact_match = [input_countries[c_ind] in s_names]
-        if any(subdivisions_exact_match):
-            label_coords.append(subdivisions[[m for m in subdivisions_exact_match if m][0]][2])
+    if " and " in input_countries[c_ind] or " and," in input_countries[c_ind]:
+        test = [coord for coord in [get_coords(w)[1] for w in c.split(" ") if w != "and" and w != "and,"] if coord != "Point(0 0)"]
+        if test:
+            label_coords.append(test[0])
+            coords_cer.append(1- (1/len(test)))
         else:
-            territories_exact_match = [input_countries[c_ind] in t_names]
-            if any(territories_exact_match):
-                label_coords.append(territories[[m for m in territories_exact_match if m][0]][0])
-            else:
-                if low_full_cer < 2.0:
-                    if low_full_cer == low_full_c_cer:
-                        label_coords.append(countries[full_c_cers.index(low_full_c_cer)][1])
-                    else:
-                        if low_full_cer == low_full_s_cer:
-                            label_coords.append(subdivisions[full_s_cers.index(low_full_s_cer)][2])
-                        else:
-                            if low_full_cer == low_full_t_cer:
-                                label_coords.append(territories[full_t_cers.index(low_full_t_cer)][0])
-                else:
-                    label_coords.append("")
+            label_coords.append("Point(0 0)")
+            coords_cer.append(1)
+    else:
+        cert, coord = get_coords(c)
+        label_coords.append(coord)
+        coords_cer.append(cert)
+
+label_coords = [coord.replace("Point", "").replace("(", "").replace(")", "").split(" ") for coord in label_coords]
+long = [coord[0] for coord in label_coords]
+lat = [coord[1] for coord in label_coords]
 
 
-    #print(c_wers)
-
-# #load files
-# files = os.listdir(args["directory"])
-#
-# output_directory = args["directory"].replace(args["directory"].split("/")[-1], "images_as_csv")
-#
-# input = pd.read_csv(args["input"])
-# input_values = input.values.tolist()
-# input_columns = input.columns.tolist()
-# input_countries = [row[input_columns.index("origin")] for row in input_values]
-#
-# locations_list = []
-#
-# for file in files:
-#     file_path = "/".join([args["directory"], file])
-#     csv = pd.read_csv(file_path)
-#     table = csv.values.tolist()
-#     columns = csv.columns.tolist()
-#
-#     lab_in = columns.index("label")
-#
-#     if "sublabel" in columns:
-#         sub_in = columns.index("sublabel")
-#         [locations_list.append(str(row[lab_in])) if str(row[sub_in]) == "nan" else locations_list.append(str(row[sub_in])) for row in table]
-#     else:
-#         [locations_list.append(str(row[lab_in])) for row in table]
-#
-# locations_list = [loc for loc in locations_list if not loc.replace('Q', "").isnumeric()]
-# locations_vocab = []
-# [[locations_vocab.append(word) for word in loc.split(" ")] for loc in locations_list]
-# locations_vocab = unique(locations_vocab)
-# input_countries = [c.replace("\n", "") for c in input_countries]
-# # locations_list = [remove_stop_words(loc) for loc in locations_list]
-# # input_countries = [remove_stop_words(c) for c in input_countries]
-#
-# c_ind = 0
-# for c_ind in range(0, len(input_countries)):
-#     c = input_countries[c_ind]
-#     c_by_word = []
-#     [c_by_word.append(word) for word in c.split(" ") if word]
-#
-#     w_ind = 0
-#     for w_ind in range(0, len(c_by_word)):
-#         word = c_by_word[w_ind]
-#         cers = [cer(word, loc) for loc in locations_vocab]
-#         low_cer = min(cers)
-#         match = locations_vocab[cers.index(low_cer)]
-#         #print("".join([word, " MATCHES WITH ", match, " CER ", str(low_cer)]))
-#         c_by_word[w_ind] = match
-#     input_countries[c_ind] = " ".join(c_by_word)
-
-output_values = [[input_countries[r]] + [label_coords[r]] + [coords_cer[r]] + input_values[r] for r in range (0, len(input_values))]
-output_columns = ["clean_origin"] + ["coordinates"] + ["coordinate certainty"] + input_columns
+output_values = [[input_countries[r]] + [lat[r]] + [long[r]] + [coords_cer[r]] + input_values[r] for r in range (0, len(input_values))]
+output_columns = ["clean_origin"] + ["latitude"] + ["longitude"] + ["coordinate certainty"] + input_columns
 
 df = pd.DataFrame(data = output_values)
-df.to_csv(str(args["input"]).replace("outputsmall.csv", "output_clean.csv"), index=False, header = output_columns)
+df.to_csv(str(args["input"]).replace(".csv", "_clean.csv"), index=False, header = output_columns)
 
 
