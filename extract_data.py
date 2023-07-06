@@ -62,7 +62,7 @@ for f in files:
                 if len(output) > 0 and len(duplicates) > 0 and any(duplicates):
                     set_value(duplicates.index(True), c, row[c])
                 else:
-                    output.append(dict(origin = row[0], destination = "United States",
+                    output.append(dict(origin = row[0], destination = "United States of America",
                                        value = None, value_measure = None,
                                        quantity = None, quantity_measure = None,
                                        description = "\n\n".join(columns[c].split("\n\n")[0:-2]),
