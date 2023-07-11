@@ -167,7 +167,7 @@ def clean_labels(list, comp):
             # print("".join([word, " MATCHES WITH \n\t",
             # c_match, " CER ", str(low_c_cer), "\n\t",
             # s_match, " CER ", str(low_s_cer), "\n\t",
-            # t_match, " CER ", str(low_t_cer)]))
+            # t_match, " CER ", str(low_t_cer)])
         label_cers.append(word_cers)
         clean_list.append(" ".join(c_by_word))
 
@@ -184,15 +184,32 @@ def get_coords(list, compare_values):
             coords.append(compare[compare_values.index(label)][c_cols.index("loc")])
             cers.append(0)
         else:
-            partial_matches = [v for v in range(0, len(compare_values)) if any([l.lower() in compare_values[v].lower() for l in label.split(" ") if l and l.lower() not in stop_words and len(l)>2])]
+            partial_matches, partial_matches_ind, contained = get_partial_matches(label, compare_values)
             if partial_matches:
-                num += 1
-                coords.append(compare[partial_matches[0]][c_cols.index("loc")])
-                cers.append(1/len(label.split(" ")))
+                if any(contained):
+                    num += 1
+                    closest = partial_matches_ind[contained.index(True)]
+                    coords.append(compare[closest][c_cols.index("loc")])
+                    cers.append(1 - (len(compare[closest][c_cols.index("itemLabel")].split(" "))/len(label.split(" "))))
+                else:
+                    num += 1
+                    coords.append(compare[partial_matches_ind[0]][c_cols.index("loc")])
+                    cers.append(cer(compare[partial_matches_ind[0]][c_cols.index("itemLabel")], label))
             else:
                 coords.append("Point(0 0)")
                 cers.append(1)
     return coords, cers, num/len(list)
+
+def get_partial_matches(label, compare):
+    partial_matches_ind = [v for v in range(0, len(compare)) if
+                       any([l.lower() in compare[v].lower() for l in label.split(" ") if
+                            l and l.lower() not in stop_words and len(l) > 2])]
+    partial_matches = [compare[ind] for ind in partial_matches_ind]
+
+    in_label = [match in label for match in partial_matches]
+
+    return partial_matches, partial_matches_ind, in_label
+
 
 def map_values(lt, ln, old_labels, new_labels, cers, dest, d_lt, d_ln, orig_values, orig_cols):
     output_values = []
@@ -269,7 +286,7 @@ dest_coords, dest_coord_cer, dest_perc = get_coords(dest_countries, c_names)
 if correct_labels:
     coord_cer = [coord_cer[i] + sum(label_cers[i]) for i in range(0, len(label_cers))]
 
-coord_cer = [1 - c for c in coord_cer]
+coord_cer = [max([0, 1 - c]) for c in coord_cer]
 
 print(label_coords)
 
