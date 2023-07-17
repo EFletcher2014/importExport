@@ -10,8 +10,292 @@ from textblob import TextBlob
 import os
 import imutils
 import string
+import copy
+import statistics
 
-SHOW_IMAGES = False
+SHOW_IMAGES = True
+
+def sort_cells(cell):
+    rect = cv2.boundingRect(cell)
+    return rect[0] + rect[1]
+
+def extend_horizontal(vertical_lines, horizontal_lines, table_x, table_x1, table_y, table_y1, vertical_horizontal_lines, extended_lines):
+    horizontal_lines = ~horizontal_lines
+    horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
+    # extend horizontal lines as needed
+    # add bounding box to vertical lines, since we will treat it as vertical lines
+    vertical_lines = cv2.rectangle(vertical_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
+
+    # if SHOW_IMAGES:
+    # cv2.imshow("vert_lines", cv2.resize(vertical_lines, None, fx=0.25, fy=0.25))
+    # cv2.waitKey(100)
+
+    # separate individual horizontal lines for extension as needed
+    horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (255, 255, 255), 10)
+
+    # if SHOW_IMAGES:
+    # cv2.imshow("hor_lines1", cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
+    # cv2.waitKey(100)
+
+    hor_lines = cv2.findContours(~horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
+
+    for line in hor_lines:
+        line_start = line[:, 0, 0].min()
+        line_end = line[:, 0, 0].max()
+        y = line[:, 0, 1].min()
+        y1 = line[:, 0, 1].max()
+
+        # find all vertical lines intersecting this row
+        intersecting_lines = vertical_lines[y:y1, :]
+
+        # extend start of lines if needed
+        indices_start = numpy.where(intersecting_lines[:, 0:line_start] == 0)[1]
+        if len(indices_start) > 0:
+            line_start = indices_start[-1]
+            extended_lines = cv2.rectangle(extended_lines, (line_start, y), (line[:, 0, 0].min(), y1), (0, 255, 0), -1)
+            # if SHOW_IMAGES:
+            # cv2.imshow('added', cv2.resize(im, None, fx=0.25, fy=0.25))
+            # cv2.waitKey(100)
+
+        # extend end of lines if needed
+        indices_end = numpy.where(intersecting_lines[:, line_end:] == 0)[1]
+        if len(indices_end) > 0:
+            line_end += indices_end[0]
+            extended_lines = cv2.rectangle(extended_lines, (line_end - indices_end[0], y), (line_end, y1), (0, 255, 0),
+                                           -1)
+            # if SHOW_IMAGES:
+            # cv2.imshow('added', cv2.resize(im, None, fx=0.25, fy=0.25))
+            # cv2.waitKey(100)
+
+        # update main image of table boundaries to reflect extended lines
+        vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (line_start, y), (line_end, y1), (0, 0, 0),
+                                                  -1)
+        vertical_lines = cv2.rectangle(vertical_lines, (table_x, table_y), (table_x1, table_y1), (255, 255, 255), 10)
+    return vertical_horizontal_lines, horizontal_lines, extended_lines
+
+def extend_vertical(vertical_lines, horizontal_lines, image, table_x, table_x1, table_y, table_y1, vertical_horizontal_lines, extended_lines):
+    # get individual vertical lines to extend as needed
+    vert_lines = cv2.findContours(~vertical_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    vert_lines = vert_lines[0] if len(vert_lines) == 2 else vert_lines[1]
+    # bad_index = []
+    #
+    # for i in range(0, len(vert_lines)):
+    #     line = vert_lines[i]
+    #     line_start = line[:, 0, 1].min()
+    #     line_end = line[:, 0, 1].max()
+    #     x_start = line[numpy.where(line[:, 0, 1] == line_start), 0, 0].min()
+    #     x_end = line[numpy.where(line[:, 0, 1] == line_end), 0, 0].max()
+    #
+    #     if not (line_end - line_start > 4 or x_end - x_start > 4):
+    #         bad_index.append(i)
+    #         image = cv2.drawContours(image, [line], 0, (255, 255, 0), -1)
+    #         vertical_horizontal_lines = cv2.drawContours(vertical_horizontal_lines, [line], 0, (255, 255, 255), -1)
+    #         if SHOW_IMAGES:
+    #             cv2.imshow('removed', cv2.resize(image, None, fx=0.25, fy=0.25))
+    #             cv2.waitKey(100)
+    #
+    # vert_lines = [vert_lines[i] for i in range(0, len(vert_lines)) if i not in bad_index]
+    # if SHOW_IMAGES:
+    #     cv2.imshow('vert lines', vertical_horizontal_lines[400:600, 1500:])
+    #     cv2.waitKey(0)
+
+    # extend vertical lines
+    # im = []
+    # longest = sorted(vert_lines, key = cv2.contourArea, reverse = True)[0]
+    #
+    # M = cv2.moments(longest)
+    # theta = 0.5 * numpy.arctan2(2 * M["mu11"], M["mu20"] - M["mu02"])
+    # angle = 180/numpy.pi * theta
+    #
+    # rotated = imutils.rotate(vertical_horizontal_lines, angle-90)
+    #
+    # if SHOW_IMAGES:
+    # cv2.imshow("rotated", cv2.resize(rotated, None, fx=0.25, fy=0.25))
+    # cv2.waitKey(100)
+    #
+    #
+    # blank_image = cv2.drawContours(blank_image, [longest], 0, (255, 255, 255), -1)
+    # if SHOW_IMAGES:
+    # cv2.imshow("first", cv2.resize(blank_image, None, fx=0.25, fy=0.25))
+    # cv2.waitKey(100)
+
+    # add bounding box to horizontal lines, since we will treat it as horizontal lines
+
+    # if SHOW_IMAGES:
+    # cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
+    # cv2.waitKey(100)
+
+    for line in vert_lines:
+        line_start = line[:, 0, 1].min()
+        line_end = line[:, 0, 1].max()
+        x_start = line[numpy.where(line[:, 0, 1] == line_start), 0, 0].min()
+        x_end = line[numpy.where(line[:, 0, 1] == line_end), 0, 0].max()
+
+        M = cv2.moments(line)
+        theta = 0.5 * numpy.arctan2(2 * M["mu11"], M["mu20"] - M["mu02"])
+        angle = 180 / numpy.pi * theta
+        slope = numpy.tan(theta)
+
+        if slope == 0:
+            slope = 99999
+
+        # currently, only extends the lines closest to the bottom so that they're touching the bounding box
+        if line_end > table_y1 - 300 and line_end < table_y1:
+            im = cv2.rectangle(image, (x_start, line_end), (x_start + 5, table_y1), (255, 255, 0), -1)
+            vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (x_start, line_end),
+                                                      (x_start + 5, table_y1), (0, 0, 0), -1)
+
+        # find all horizontal lines intersecting this column
+        intersecting_lines = vertical_horizontal_lines[:, x_start - 7:x_end + 7]
+
+        # if SHOW_IMAGES:
+        #     cv2.imshow('line', cv2.resize(vertical_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
+        #     cv2.waitKey(0)
+        #
+        # if SHOW_IMAGES:
+        #     cv2.imshow('intersect', cv2.resize(vertical_horizontal_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
+        #     cv2.waitKey(0)
+
+
+        # extend start of lines if needed
+        indices_start = numpy.where(intersecting_lines[0:line_start, :] == 0)[0]
+        if len(indices_start) > 0:
+            extended_lines = cv2.line(extended_lines, (x_start - math.floor((line_start - indices_start[-1]) / slope), indices_start[-1]),
+                                      (x_end, line_end), (0, 255, 0), 3)
+            line_start = indices_start[-1]
+            # extended_lines = cv2.line(extended_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 255, 0), 3)
+            # if SHOW_IMAGES:
+            #     cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
+            #     cv2.waitKey(0)
+
+        # extend end of lines if needed
+        indices_end = numpy.where(intersecting_lines[line_end + 1:, :] == 0)[0]
+        if len(indices_end) > 0:
+            line_end += indices_end[0]
+            extended_lines = cv2.line(extended_lines, (x_start, line_start - indices_end[0]), (x_end, line_end),
+                                      (0, 255, 0), 3)
+            extended_lines = cv2.line(extended_lines, (x_start, min(line_end, line_start) - indices_end[0]),
+                                      (x_end, line_end), (0, 255, 0), 3)
+            # if SHOW_IMAGES:
+            #     cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
+            #     cv2.waitKey(0)
+
+        # update main image of table boundaries to reflect extended lines
+        vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (x_start, line_start),
+                                             (x_end, line_end), (0, 0, 0), 3)
+        vertical_lines = cv2.line(vertical_lines, (x_start, line_start),
+                                  (x_end, line_end), (0, 0, 0), 3)
+        # else:
+        #     if SHOW_IMAGES:
+        #         cv2.line(image, (x_start, line_start),
+        #                  (x_end, line_end), (255, 255, 0), 3)
+        #         cv2.imshow('line', image[line_start-100:line_end+100, x_start-100:x_end+100])
+        #         cv2.waitKey(0)
+        #         cv2.line(image, (x_start, line_start),
+        #                  (x_end, line_end), (0, 255, 0), 3)
+
+        # vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 0, 0), 3)
+        # vertical_lines = cv2.line(vertical_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 0, 0), 3)
+
+    return vertical_horizontal_lines, vertical_lines, extended_lines
+
+def find_heading(table_y, horizontal_lines, image):
+
+    hor_line_indices = numpy.where(horizontal_lines == 255)
+    end_heading = max([i for i in hor_line_indices[0] if i < 1000])
+
+    heading_otsu = image[table_y:end_heading, :]
+
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, numpy.array(image).shape[1] // 300))
+    eroded_heading = cv2.erode(heading_otsu, vertical_kernel, iterations=3)
+    heading_vert = cv2.dilate(eroded_heading, vertical_kernel, iterations=3)
+    hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (numpy.array(image).shape[1] // 300, 1))
+    heading_hor = cv2.erode(heading_otsu, hor_kernel, iterations=5)
+    heading_hor = cv2.dilate(heading_hor, hor_kernel, iterations=5)
+
+    if SHOW_IMAGES:
+        cv2.imshow('vert', cv2.resize(heading_vert, None, fx=0.25, fy=0.25))
+        cv2.waitKey(100)
+
+    return heading_vert, heading_hor, end_heading
+
+def collect_heading_lines(thresh, table_x, table_x1, table_y, horizontal_lines, vertical_lines):
+    heading_vert, heading_hor, end_heading = find_heading(table_y, horizontal_lines, thresh)
+    hor_lines = cv2.findContours(~heading_hor, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
+
+    for line in hor_lines:
+        line_start = line[:, 0, 0].min()
+        line_end = line[:, 0, 0].max()
+        y = line[:, 0, 1].min()
+        y1 = line[:, 0, 1].max()
+
+        # if SHOW_IMAGES:
+        #     cv2.imshow('line', thresh[y+table_y:y1+table_y, :])
+        #     cv2.waitKey(0)
+
+        horizontal_lines[y+table_y] = thresh[y + table_y]
+
+    vert_lines = cv2.findContours(~heading_vert, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    vert_lines = vert_lines[0] if len(vert_lines) == 2 else vert_lines[1]
+
+    for line in vert_lines:
+        line_start = line[:, 0, 1].min()
+        line_end = line[:, 0, 1].max()
+        x_start = line[numpy.where(line[:, 0, 1] == line_start), 0, 0].min()
+        x_end = line[numpy.where(line[:, 0, 1] == line_end), 0, 0].max()
+
+        M = cv2.moments(line)
+        theta = 0.5 * numpy.arctan2(2 * M["mu11"], M["mu20"] - M["mu02"])
+        angle = 180 / numpy.pi * theta
+        slope = numpy.tan(theta)
+
+        # if SHOW_IMAGES:
+        #     cv2.imshow('line', thresh[table_y:end_heading, x_start:x_end+3])
+        #     cv2.waitKey(0)
+
+        vertical_lines[table_y:end_heading, x_start] = thresh[table_y:end_heading, x_start]
+
+    vert_lines = cv2.findContours(vertical_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    vert_lines = vert_lines[0] if len(vert_lines) == 2 else vert_lines[1]
+
+    bad_lines = [line for line in vert_lines if (cv2.boundingRect(line)[2] < 4 and cv2.boundingRect(line)[3] < 10) or (table_x1 - cv2.boundingRect(line)[0]) < 50]
+
+    for line in bad_lines:
+        vertical_lines = cv2.drawContours(vertical_lines, [line], 0, (0, 0, 0), -1)
+
+    hor_lines = cv2.findContours(horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
+
+    bad_lines = [line for line in hor_lines if (cv2.boundingRect(line)[2] < 10 and cv2.boundingRect(line)[3] < 4) or (
+                table_y1 - cv2.boundingRect(line)[1]) < 50]
+
+    for line in bad_lines:
+        horizontal_lines = cv2.drawContours(horizontal_lines, [line], 0, (0, 0, 0), -1)
+
+
+    if SHOW_IMAGES:
+        cv2.imshow('vert', cv2.resize(~vertical_lines, None, fx=0.25, fy=0.25))
+        cv2.imshow('hor', cv2.resize(~horizontal_lines, None, fx=0.25, fy=0.25))
+        cv2.waitKey(100)
+
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
+    vh_heading = cv2.addWeighted(vertical_lines, 0.5, horizontal_lines, 0.5, 0.0)
+    vh_heading = cv2.erode(~vh_heading, kernel, iterations=3)
+    vh_heading = cv2.morphologyEx(vh_heading, cv2.MORPH_OPEN,
+                                  cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
+    thresh_heading, vh_heading = cv2.threshold(vh_heading, 128, 255,
+                                               cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+    vh_heading = cv2.line(vh_heading, (table_x, table_y),
+                          (table_x1, table_y), (0, 0, 0), 3)
+    vh_heading = cv2.line(vh_heading, (table_x, end_heading),
+                          (table_x1, end_heading), (0, 0, 0), 3)
+
+    return vh_heading, horizontal_lines, ~vertical_lines
+
 
 def clean_str(s):
     return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "").replace("-", "")
@@ -33,27 +317,43 @@ def parse_text(cell_im, num_only = False, psm = 12):
 
 
 def clean_cell(x, y, w, h):
-    cell_im = no_lines[y:y+h, x:x+w]
+    im_to_clean = no_lines[y:y+h, x:x+w]
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-    cell_im = cv2.erode(cell_im, kernel, iterations=1)
-    cell_im = cv2.dilate(cell_im, kernel, iterations=1)
+    # if SHOW_IMAGES:
+    #     cv2.imshow("for cleaning", im_to_clean)
+    #     cv2.waitKey(0)
+
+    # testing dilation to isolate text contours from noise
+    rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
+    mega_dilation = cv2.dilate(im_to_clean, rect_kernel, iterations=1)
+
+    # if SHOW_IMAGES:
+    #     cv2.imshow('dilated', mega_dilation)
+    #     cv2.waitKey(0)
+
+    cell_im = im_to_clean.copy()
 
     # Find contours, highlight text areas, and extract ROIs
-    cnts = cv2.findContours(cell_im, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cv2.findContours(mega_dilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+
+    c_dims = [cv2.boundingRect(cnt) for cnt in cnts]
+    avg_w = statistics.mean([dim[2] for dim in c_dims])
+    avg_h = statistics.mean([dim[3] for dim in c_dims])
 
     for c in cnts:
         # compute the bounding box of the contour
         (x, y, w, h) = cv2.boundingRect(c)
         # check if contour is at least 35px wide and 100px tall, and if
         # so, consider the contour a digit
-        if h < 4 or w < 3:
+        if w < avg_w/2:
             cell_im = cv2.drawContours(cell_im, [c], 0, (0, 0, 0), -1)
 
-    #if SHOW_IMAGES:
-        # cv2.imshow("clean", cell_im)
-        # cv2.waitKey(100)
+    rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    # cell_im = cv2.dilate(cell_im, rect_kernel, iterations=1)
+    if SHOW_IMAGES:
+        cv2.imshow("clean", cell_im)
+        cv2.waitKey(0)
 
     return cell_im
 
@@ -67,13 +367,15 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         cells = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         cells = cells[0] if len(cells) == 2 else cells[1]
+        cells = [cell for cell in cells if cv2.contourArea(cell) > 2500]
+        cells.sort(reverse=True, key=sort_cells)
 
         if not cells:
             return cols
 
-        #if SHOW_IMAGES:
-            # cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
-            # cv2.waitKey(100)
+        # if SHOW_IMAGES:
+        #     cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
+        #     cv2.waitKey(0)
 
         cell = cells[-1]
         cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cell)
@@ -89,10 +391,11 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
 
         label = str(tb.correct())
 
-        # if SHOW_IMAGES:
-        #if SHOW_IMAGES:
-            #   cv2.imshow(label, image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
-            # cv2.waitKey(100)
+        if SHOW_IMAGES:
+            cv2.imshow('cell', image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
+            cv2.rectangle(image, (x+cell_x, y+cell_y), (x+cell_x+cell_w, y+cell_y+cell_h), color = (255, 0, 255), thickness = 5)
+            cv2.imshow('cell on image', cv2.resize(image, None, fx=0.25, fy=0.25))
+            cv2.waitKey(0)
 
         #if cell isn't as tall as the entire section, know there are subheadings. Parse those instead
         if y + cell_y + cell_h < g_h - 10:
@@ -200,6 +503,11 @@ for file in files:
     # load the input image and convert it to grayscale
     image = cv2.imread(file_path)
 
+    # color over any phantom lines that may have appeared at bottom and top of page from scanning
+    image = cv2.rectangle(image, (0, 0), (numpy.array(image).shape[1], 30), (255, 255, 255), -1)
+    image = cv2.rectangle(image, (0, numpy.array(image).shape[0] - 50),
+                          (numpy.array(image).shape[1], numpy.array(image).shape[0]), (255, 255, 255), -1)
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     img_bin_otsu = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 7)
 
@@ -282,99 +590,22 @@ for file in files:
         cv2.imshow('vert', cv2.resize(~vertical_lines, None, fx=0.25, fy=0.25))
         cv2.waitKey(100)
 
+    vh_heading, horizontal_lines, vertical_lines = collect_heading_lines(img_bin_otsu, table_x, table_x1, table_y, horizontal_lines, ~vertical_lines)
 
-    #get individual vertical lines to extend as needed
-    vert_lines = cv2.findContours(~vertical_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    vert_lines = vert_lines[0] if len(vert_lines) == 2 else vert_lines[1]
+    vertical_horizontal_lines = vh_heading
+    vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
 
+    # if SHOW_IMAGES:
+    #     cv2.imshow('heading_vh', cv2.resize(vh_heading, None, fx=0.25, fy=0.25))
+    #     cv2.waitKey(0)
 
-
-
-    #extend vertical lines
-    # im = []
-    # longest = sorted(vert_lines, key = cv2.contourArea, reverse = True)[0]
-    blank_image = numpy.zeros((image.shape[0], image.shape[1], 3), numpy.uint8)
     extended_lines = image.copy()
-    #
-    # M = cv2.moments(longest)
-    # theta = 0.5 * numpy.arctan2(2 * M["mu11"], M["mu20"] - M["mu02"])
-    # angle = 180/numpy.pi * theta
-    #
-    # rotated = imutils.rotate(vertical_horizontal_lines, angle-90)
-    #
-    #if SHOW_IMAGES:
-        # cv2.imshow("rotated", cv2.resize(rotated, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
-    #
-    #
-    # blank_image = cv2.drawContours(blank_image, [longest], 0, (255, 255, 255), -1)
-    #if SHOW_IMAGES:
-        # cv2.imshow("first", cv2.resize(blank_image, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
+    temp_vh_lines = copy.deepcopy(vertical_horizontal_lines)
+    temp_v_lines = copy.deepcopy(vertical_lines)
+    temp_h_lines = copy.deepcopy(horizontal_lines)
+    temp_e_lines = copy.deepcopy(extended_lines)
 
-    #add bounding box to horizontal lines, since we will treat it as horizontal lines
-    horizontal_lines = ~horizontal_lines
-    horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
-    #if SHOW_IMAGES:
-        # cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
-
-    for line in vert_lines:
-        line_start = line[:, 0, 1].min()
-        line_end = line[:, 0, 1].max()
-        x_start = line[numpy.where(line[:, 0, 1] == line_start), 0, 0].min()
-        x_end = line[numpy.where(line[:, 0, 1] == line_end), 0, 0].max()
-
-        M = cv2.moments(line)
-        theta = 0.5 * numpy.arctan2(2 * M["mu11"], M["mu20"] - M["mu02"])
-        angle = 180 / numpy.pi * theta
-        slope = numpy.tan(theta)
-
-        #currently, only extends the lines closest to the bottom so that they're touching the bounding box
-        if line_end > table_y1 - 25 and line_end < table_y1:
-            im = cv2.rectangle(image, (x_start, line_end), (x_start+5, table_y1), (255, 255, 0), -1)
-            vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (x_start, line_end), (x_start+5, table_y1), (0, 0, 0), -1)
-
-        # find all horizontal lines intersecting this column
-        intersecting_lines = vertical_horizontal_lines[:, x_start-7:x_end+7]
-
-        #if SHOW_IMAGES:
-            # cv2.imshow('line', cv2.resize(vertical_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
-            # cv2.waitKey(100)
-        #
-        #if SHOW_IMAGES:
-            # cv2.imshow('intersect', cv2.resize(vertical_horizontal_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
-            # cv2.waitKey(0)
-
-        # extend start of lines if needed
-        indices_start = numpy.where(intersecting_lines[0:line_start, :] == 0)[0]
-        if len(indices_start) > 0:
-
-            extended_lines = cv2.line(extended_lines, (x_start - math.floor((line_start - indices_start[-1]) / slope), indices_start[-1]),
-                                      (x_end, line_end), (0, 255, 0), 3)
-            line_start = indices_start[-1]
-            # extended_lines = cv2.line(extended_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 255, 0), 3)
-            #if SHOW_IMAGES:
-                # cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
-                # cv2.waitKey(100)
-
-        # extend end of lines if needed
-        indices_end = numpy.where(intersecting_lines[line_end:, :] == 0)[0]
-        if len(indices_end) > 0:
-            line_end += indices_end[0]
-            extended_lines = cv2.line(extended_lines, (x_start, line_start - indices_end[0]), (x_end, line_end), (0, 255, 0), 3)
-            # extended_lines = cv2.line(extended_lines, (x_start, min(line_end, line_start) - indices_end[0]), (x_end, line_end), (0, 255, 0), 3)
-            #if SHOW_IMAGES:
-                # cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
-                # cv2.waitKey(100)
-
-        # update main image of table boundaries to reflect extended lines
-        vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (x_start, line_start),
-                                             (x_end, line_end), (0, 0, 0), 3)
-        vertical_lines = cv2.line(vertical_lines, (x_start, line_start),
-                                             (x_end, line_end), (0, 0, 0), 3)
-        # vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 0, 0), 3)
-        # vertical_lines = cv2.line(vertical_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 0, 0), 3)
+    vertical_horizontal_lines_v_first, vertical_lines_v_first, extended_lines = extend_vertical(vertical_lines, horizontal_lines, image, table_x, table_x1, table_y, table_y1, vertical_horizontal_lines, extended_lines)
 
     #highlight areas where lines were extended, then show new lines
     #if SHOW_IMAGES:
@@ -385,55 +616,39 @@ for file in files:
         # cv2.imshow('extended lines_vert', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
         # cv2.waitKey(100)
 
-    #extend horizontal lines as needed
-    #add bounding box to vertical lines, since we will treat it as vertical lines
-    vertical_lines = cv2.rectangle(vertical_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
+    vertical_horizontal_lines_v_first, horizontal_lines_v_first, extended_lines = extend_horizontal(vertical_lines, horizontal_lines, table_x, table_x1, table_y, table_y1, vertical_horizontal_lines, extended_lines)
 
+    if SHOW_IMAGES:
+        cv2.imshow('extended lines vert first', cv2.resize(vertical_horizontal_lines_v_first, None, fx=0.25, fy=0.25))
+        cv2.waitKey(100)
 
-    #if SHOW_IMAGES:
-        # cv2.imshow("vert_lines", cv2.resize(vertical_lines, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
+    vertical_horizontal_lines_h_first, horizontal_lines_h_first, extended_lines = extend_horizontal(temp_v_lines, temp_h_lines, table_x, table_x1, table_y, table_y1, temp_vh_lines, temp_e_lines)
 
-    #separate individual horizontal lines for extension as needed
-    horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (255, 255, 255), 10)
+    vertical_horizontal_lines_h_first, vertical_lines_h_first, extended_lines = extend_vertical(temp_v_lines,
+                                                                                                  horizontal_lines_h_first,
+                                                                                                  image, table_x,
+                                                                                                  table_x1, table_y,
+                                                                                                  table_y1,
+                                                                                                  vertical_horizontal_lines_h_first, extended_lines)
 
+    vertical_horizontal_lines = cv2.bitwise_or(vertical_horizontal_lines_h_first, vertical_horizontal_lines_v_first)
+    vertical_lines = cv2.bitwise_or(vertical_lines_h_first, vertical_lines_v_first)
+    horizontal_lines = cv2.bitwise_or(horizontal_lines_h_first, horizontal_lines_v_first)
 
-    #if SHOW_IMAGES:
-        # cv2.imshow("hor_lines1", cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
+    vertical_horizontal_lines_no_box = vertical_horizontal_lines.copy()
+    vertical_horizontal_lines_no_box = cv2.rectangle(vertical_horizontal_lines_no_box, (table_x, table_y), (table_x1, table_y1), (255, 255, 255), 10)
+    vertical_horizontal_lines_no_box = cv2.line(vertical_horizontal_lines_no_box, (table_x, table_y), (table_x1, table_y), (0, 0, 0), 20)
+    vertical_horizontal_lines_no_box = cv2.line(vertical_horizontal_lines_no_box, (table_x, table_y1), (table_x1, table_y1), (0, 0, 0), 20)
+    vertical_horizontal_lines_no_box = cv2.dilate(~vertical_horizontal_lines_no_box, kernel, iterations = 5)
+    vertical_horizontal_lines_no_box = ~vertical_horizontal_lines_no_box
 
-    hor_lines = cv2.findContours(~horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
+    no_lines = cv2.addWeighted(vertical_horizontal_lines_no_box, 0.5, img_bin_otsu, 0.5, 0.0)
+    thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-    for line in hor_lines:
-        line_start = line[:, 0, 0].min()
-        line_end = line[:, 0, 0].max()
-        y = line[:, 0, 1].min()
-        y1 = line[:, 0, 1].max()
-
-        # find all vertical lines intersecting this row
-        intersecting_lines = vertical_lines[y:y1, :]
-
-        #extend start of lines if needed
-        indices_start = numpy.where(intersecting_lines[:, 0:line_start] == 0)[1]
-        if len(indices_start) > 0:
-            line_start = indices_start[-1]
-            extended_lines = cv2.rectangle(extended_lines, (line_start, y), (line[:, 0, 0].min(), y1), (0, 255, 0), -1)
-            #if SHOW_IMAGES:
-                #cv2.imshow('added', cv2.resize(im, None, fx=0.25, fy=0.25))
-                #cv2.waitKey(100)
-
-        #extend end of lines if needed
-        indices_end = numpy.where(intersecting_lines[:, line_end:] == 0)[1]
-        if len(indices_end) > 0:
-            line_end += indices_end[0]
-            extended_lines = cv2.rectangle(extended_lines, (line_end - indices_end[0], y), (line_end, y1), (0, 255, 0), -1)
-            #if SHOW_IMAGES:
-                #cv2.imshow('added', cv2.resize(im, None, fx=0.25, fy=0.25))
-                #cv2.waitKey(100)
-
-        #update main image of table boundaries to reflect extended lines
-        vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (line_start, y), (line_end, y1), (0, 0, 0), -1)
+    if SHOW_IMAGES:
+        cv2.imshow('no box', cv2.resize(vertical_horizontal_lines_no_box, None, fx=0.25, fy=0.25))
+        cv2.imshow('no lines', cv2.resize(no_lines, None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
 
     #highlight areas where lines were extended, then show new lines
     #if SHOW_IMAGES:
@@ -441,50 +656,58 @@ for file in files:
         # cv2.waitKey(100)
 
     if SHOW_IMAGES:
-        cv2.imshow('extended lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
+        cv2.imshow('extended lines h first', cv2.resize(vertical_horizontal_lines_h_first, None, fx=0.25, fy=0.25))
+        cv2.imshow('extended result', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
         cv2.waitKey(100)
 
 
     #isolate table's cells
     cells = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     cells = cells[0] if len(cells) == 2 else cells[1]
-
-
-    thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    cells = [cell for cell in cells if cv2.contourArea(cell) > 2500]
+    cells.sort(reverse=True, key=sort_cells)
 
     #if SHOW_IMAGES:
         # cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
         # cv2.waitKey(100)
 
+    cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-1])
 
-    cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-2])
+    if SHOW_IMAGES:
+        cv2.imshow("cell",
+                   image[cell_y:cell_y + cell_h + 66, cell_x:cell_x + cell_w])
+        cv2.waitKey(0)
 
 
 
-    cell_in = len(cells) - 2
-    cell_h = 501
-    while cell_in in range(0, len(cells)) and cell_h > 500:
+    cell_in = len(cells) - 1
+    while cell_in >= 0 and cell_h > 500:
         cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[cell_in])
         cell_in -= 1
 
-    # if SHOW_IMAGES:
-    #     cv2.imshow("cell",
-    #            cv2.resize(image[cell_y:cell_y + cell_h + 66, cell_x:cell_x + cell_w], None, fx=0.25, fy=0.25))
-    #     cv2.waitKey(100)
+    cell_in += 1
+    cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[cell_in])
 
-    col1_width = cv2.boundingRect(cells[-1])[2]
+    if SHOW_IMAGES:
+        cv2.imshow("cell",
+                   image[cell_y:cell_y + cell_h + 66, cell_x:cell_x + cell_w])
+        cv2.waitKey(0)
+
+    col1_width = cell_w
 
     #expect one more heading
     #if SHOW_IMAGES:
         # cv2.imshow("final heading", cv2.resize(image[table_y:cell_y+cell_h+66, table_x:table_x1], None, fx=0.25, fy=0.25))
         # cv2.waitKey(100)
 
+    vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (table_x + col1_width, cell_y + cell_h),
+                                         (table_x1, cell_y + cell_h), (0, 0, 0), 3)
     vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (table_x + col1_width, cell_y + cell_h + 66), (table_x1, cell_y + cell_h + 66), (0, 0, 0), 3)
 
 
-    #if SHOW_IMAGES:
-        # cv2.imshow('heading', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
+    if SHOW_IMAGES:
+        cv2.imshow('vertical_horizontal_lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
 
     columns = parse_cells(table_x, table_y, table_x1, cell_y + cell_h + 66, "", [])
 
@@ -625,6 +848,12 @@ for file in files:
     clean_data = [[clean_str(table[r][c]) if contain_data_col[c] == True else str(table[r][c]).replace(".", "") for c in range(0, len(table[0]))] for r in range(0, len(table))]
 
     df = pd.DataFrame(data = clean_data)
+
+    isExist = os.path.exists(output_directory)
+
+    if not isExist:
+        os.makedirs(output_directory)
+
     df.to_csv("/".join([output_directory, file.replace(".tiff", ".csv")]), index=False, header = [str(row).translate(str.maketrans('', '', string.punctuation)) for row in labels])
 
     if SHOW_IMAGES:

@@ -3,6 +3,7 @@ from hathitrust_api import DataAPI
 from hathitrust_api import BibAPI
 from PIL import Image, ImageTk
 import io
+import os
 import cv2
 import string
 import tkinter
@@ -12,23 +13,31 @@ from requests_oauthlib import OAuth1
 import pytesseract
 import input_page_nums
 import statistics
+import argparse
 
 
 def remove_punct(s):
     return str(s).translate(str.maketrans('', '', string.punctuation))
 
-def getImage(p, path):
+def getImage(p, path, filename):
+    isExist = os.path.exists(path)
+
+    if not isExist:
+        os.makedirs(path)
+
     url = "".join(["https://babel.hathitrust.org/cgi/htd/volume/pageimage/", doc_id, "/", str(p)])
     r = rsession.get(url, params={'v': str(2), 'height': str(3400)})
     r.raise_for_status()
     im = r.content
     im = Image.open(io.BytesIO(im))
-    im.save(path)
+    im.save("".join([path, filename]))
     return im
+
+
 
 access_key = open("access_key.txt").read().replace("\n", "")
 secret_key = open("secret_key.txt").read().replace("\n", "")
-doc_id = 'mdp.39015006977725'
+doc_id = open("doc_id.txt").read().replace("\n", "")
 data_api = DataAPI(access_key, secret_key)
 bib_api = BibAPI()
 bib_info = bib_api.get_single_record_json('htid', doc_id, full = True)
@@ -58,7 +67,7 @@ while p_num < 1000 and "contents" not in ocr.lower():
 
 #then pull page numbers for the section we want, imports of merchandise by articles and countries
 date = statistics.mode(dates)
-toc_im = getImage(p_num, "".join(["/home/emily/Downloads/", date, "/toc.tiff"]))
+toc_im = getImage(p_num, "".join(["/home/emily/Downloads/", date]), "/toc.tiff")
 current_page = [int(i) for i in ocr if i.isdigit()][0]
 page_offset = p_num - current_page
 section_starts = -1
@@ -86,6 +95,6 @@ while l < len(lines) and section_starts == -1:
 #download images for those pages
 for p in range(section_starts, section_ends):
     print("downloading page " + str(p))
-    getImage(p, "".join(["/home/emily/Downloads/", date, "/temp_images/", str(p), ".tiff"]))
+    getImage(p, "".join(["/home/emily/Downloads/", date, "/temp_images/"]), "".join([str(p), ".tiff"]))
 
 print("complete")
