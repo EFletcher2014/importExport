@@ -3,6 +3,7 @@ import cv2
 import argparse
 import numpy
 import math
+import statistics
 import pandas as pd
 import string
 from scipy import stats
@@ -13,47 +14,90 @@ import string
 
 SHOW_IMAGES = False
 
-def clean_str(s):
-    return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "").replace("-", "")
+def sort_cells(cell):
+    rect = cv2.boundingRect(cell)
+    return rect[0] + rect[1]
+
+def clean_str(s, num_only = False):
+    ret = str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace("-", "")
+    if not num_only:
+        ret = ret.replace(".", "")
+    return ret
 
 def parse_text(cell_im, num_only = False, psm = 12):
     text = ""
     psm_str = "".join(["--psm ", str(psm)])
     if num_only:
-        text = str((pytesseract.image_to_string(cell_im, config=psm_str, lang='engorig'))).translate(str.maketrans('', '', string.punctuation))
-        text = "".join([c for c in text if c.isdigit()])
+        result = pytesseract.image_to_data(cell_im, config=psm_str + " -c tessedit_char_whitelist=0123456789,", lang='engorig', output_type='data.frame')
+        result = result[result.conf != -1]
+        if len(result.conf) > 0:
+            conf = min(result.conf)
+        else:
+            conf = -1
+        text = (" ".join([str(int(r)) if isinstance(r, float) else str(r) for r in result.text.values])).replace(",", "")
+        text = "".join([c for c in text if c.isdigit() or c == "."])
     else:
-        text = str(pytesseract.image_to_string(cell_im, config=psm_str, lang='engorig')).replace(",", "").replace(";", "")
+        result = pytesseract.image_to_data(cell_im, config=psm_str,
+                                           lang='engorig', output_type='data.frame')
+        result = result[result.conf != -1]
+        if len(result.conf) > 0:
+            conf = min(result.conf)
+        else:
+            conf = -1
+        text = (" ".join([str(int(r)) if isinstance(r, float) else str(r) for r in result.text.values])).replace(",", "").replace(";", "")
         text = "".join([c for c in text if not c.isdigit()])
+
+        if col == columns[0]:
+            tb = TextBlob(text)
+
+            text = str(tb.correct())
 
     if text == "" and psm != 7:
         return parse_text(cell_im, num_only, 7)
     else:
-        return text
+        return text, conf
 
 
 def clean_cell(x, y, w, h):
-    cell_im = no_lines[y:y+h, x:x+w]
+    im_to_clean = no_lines[y:y+h, x:x+w]
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-    cell_im = cv2.erode(cell_im, kernel, iterations=1)
-    cell_im = cv2.dilate(cell_im, kernel, iterations=1)
+    if SHOW_IMAGES:
+        cv2.imshow("for cleaning", im_to_clean)
+        cv2.waitKey(0)
+
+    # testing dilation to isolate text contours from noise
+    rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mega_dilation = cv2.dilate(im_to_clean, rect_kernel, iterations=1)
+
+    if SHOW_IMAGES:
+        cv2.imshow('dilated', mega_dilation)
+        cv2.waitKey(0)
+
+    cell_im = im_to_clean.copy()
 
     # Find contours, highlight text areas, and extract ROIs
-    cnts = cv2.findContours(cell_im, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cv2.findContours(mega_dilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+
+    c_dims = [cv2.boundingRect(cnt) for cnt in cnts]
+
+    if len(c_dims) > 0:
+        avg_w = statistics.mean([dim[2] for dim in c_dims])
+        avg_h = statistics.mean([dim[3] for dim in c_dims])
 
     for c in cnts:
         # compute the bounding box of the contour
         (x, y, w, h) = cv2.boundingRect(c)
         # check if contour is at least 35px wide and 100px tall, and if
         # so, consider the contour a digit
-        if h < 4 or w < 3:
+        if w < avg_w/2 or w < 10 or h < 5:
             cell_im = cv2.drawContours(cell_im, [c], 0, (0, 0, 0), -1)
 
-    #if SHOW_IMAGES:
-        # cv2.imshow("clean", cell_im)
-        # cv2.waitKey(100)
+    rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    # cell_im = cv2.dilate(cell_im, rect_kernel, iterations=1)
+    if SHOW_IMAGES:
+        cv2.imshow("clean", cell_im)
+        cv2.waitKey(0)
 
     return cell_im
 
@@ -67,13 +111,15 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         cells = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         cells = cells[0] if len(cells) == 2 else cells[1]
+        cells = [cell for cell in cells if cv2.contourArea(cell) > 2500]
+        cells.sort(reverse=True, key=sort_cells)
 
         if not cells:
             return cols
 
-        #if SHOW_IMAGES:
-            # cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
-            # cv2.waitKey(100)
+        # if SHOW_IMAGES:
+        #     cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
+        #     cv2.waitKey(0)
 
         cell = cells[-1]
         cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cell)
@@ -90,9 +136,10 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         label = str(tb.correct())
 
         # if SHOW_IMAGES:
-        #if SHOW_IMAGES:
-            #   cv2.imshow(label, image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
-            # cv2.waitKey(100)
+        #     cv2.imshow('cell', image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
+        #     cv2.rectangle(image, (x+cell_x, y+cell_y), (x+cell_x+cell_w, y+cell_y+cell_h), color = (255, 0, 255), thickness = 5)
+        #     cv2.imshow('cell on image', cv2.resize(image, None, fx=0.25, fy=0.25))
+        #     cv2.waitKey(0)
 
         #if cell isn't as tall as the entire section, know there are subheadings. Parse those instead
         if y + cell_y + cell_h < g_h - 10:
@@ -105,7 +152,7 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         else:
             if cell_w >= 80:
                 cols.append(dict(start_x = cell_x + x, start_y = cell_y + y, height = cell_h,
-                                width = cell_w, label = "\n".join([append_label, label]), data = []))
+                                width = cell_w, label = "\n".join([append_label, label]), data = [], confs = []))
             parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
 
         #move to next section
@@ -200,6 +247,11 @@ for file in files:
     # load the input image and convert it to grayscale
     image = cv2.imread(file_path)
 
+    # color over any phantom lines that may have appeared at bottom and top of page from scanning
+    image = cv2.rectangle(image, (0, 0), (numpy.array(image).shape[1], 30), (255, 255, 255), -1)
+    image = cv2.rectangle(image, (0, numpy.array(image).shape[0] - 50),
+                          (numpy.array(image).shape[1], numpy.array(image).shape[0]), (255, 255, 255), -1)
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     img_bin_otsu = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 7)
 
@@ -228,6 +280,8 @@ for file in files:
 
 
     no_lines = cv2.addWeighted(vertical_horizontal_lines, 0.5, img_bin_otsu, 0.5, 0.0)
+    thresh, no_lines = cv2.threshold(no_lines, 128, 255,
+                                                      cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
     #clean up horizontal lines in order to extend them as needed
     horizontal_lines = cv2.erode(~horizontal_lines, kernel, iterations=3)
@@ -448,13 +502,12 @@ for file in files:
     #isolate table's cells
     cells = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     cells = cells[0] if len(cells) == 2 else cells[1]
+    cells = [cell for cell in cells if cv2.contourArea(cell) > 2500]
+    cells.sort(reverse=True, key=sort_cells)
 
-
-    thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-
-    #if SHOW_IMAGES:
-        # cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
+    if SHOW_IMAGES:
+        cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
+        cv2.waitKey(100)
 
 
     cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cells[-2])
@@ -488,7 +541,8 @@ for file in files:
 
     columns = parse_cells(table_x, table_y, table_x1, cell_y + cell_h + 66, "", [])
 
-
+    #remove columns parsed incorrectly
+    columns = [col for col in columns if col["width"] > 100 or clean_str(col["label"]) != ""]
 
     #now that heading is extracted, need to extract data as well
     first_col = no_lines[columns[0]["start_y"]+columns[0]["height"]:table_y1, columns[0]["start_x"]:columns[0]["start_x"]+columns[0]["width"]]
@@ -501,9 +555,9 @@ for file in files:
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
     dilate = cv2.dilate(first_col, kernel, iterations=2)
 
-    #if SHOW_IMAGES:
-        # cv2.imshow("dilate", cv2.resize(dilate, None, fx=0.25, fy=0.25))
-        # cv2.waitKey(100)
+    if SHOW_IMAGES:
+        cv2.imshow("dilate", cv2.resize(dilate, None, fx=0.25, fy=0.25))
+        cv2.waitKey(100)
 
     # Find contours, highlight text areas, and extract ROIs
     cnts = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -599,32 +653,50 @@ for file in files:
             #     cv2.imshow("cell", cv2.resize(cell_im, None, fx=0.25, fy=0.25))
             #     cv2.waitKey(100)
 
-            text = parse_text(cell_im, num_only=(col != columns[0]))
-
-            tb = TextBlob(text)
-
-            text = str(tb.correct())
+            text, conf = parse_text(cell_im, num_only=(col != columns[0]))
 
             col["data"].append(text)
+            col["confs"].append(conf)
 
     #write to CSV
     labels = [x["label"] for x in columns]
-    data = ["" for i in range(0, len(columns))]
+
+    for l in range(0, len(labels)):
+        labels.insert(2*l+1, "".join(["col", str(l+1), "_CONF"]))
+
+    data = ["" for i in range(0, 2*len(columns))]
     for x in range(0, len(columns)):
-        data[x] = columns[x]["data"]
+        data[x*2] = columns[x]["data"]
+        data[2*x+1] = columns[x]["confs"]
     table = numpy.array(data).T.tolist()
     #data.insert(0, labels)
 
     #Clean data
-    # first: find cells that are likely to contain relevant data
-    contain_data = [[clean_str(cell).isnumeric() for cell in row] for row in table]
+    # first: find cells that are likely to contain relevant data, ignoring confidence values
+    contain_data = [[clean_str(row[c]).isnumeric() and c%2 == 0 for c in range(0, len(row))] for row in table]
     contain_data_row = [any(row) for row in contain_data]
     contain_data_col = [any([row[c] for row in contain_data]) for c in range(0, len(contain_data[0]))]
     data = [table[r] for r in range(0, len(table)) if contain_data_row[r] == True]
 
-    clean_data = [[clean_str(table[r][c]) if contain_data_col[c] == True else str(table[r][c]).replace(".", "") for c in range(0, len(table[0]))] for r in range(0, len(table))]
+    clean_data = [["" for c in row] for row in table]
+    for r in range(0, len(table)):
+        for c in range(0, len(table[r])):
+            if contain_data_col[c]:
+                clean_data[r][c] = clean_str(table[r][c], c!=0)
+            else:
+                if not any(char.isalpha() for char in table[r][c]):
+                    clean_data[r][c] = str(table[r][c])
+                else:
+                    clean_data[r][c] = str(table[r][c]).replace(".", "")
+        # [[clean_str(table[r][c]) if contain_data_col[c] == True else if str(table[r][c]).isnumeric() str(table[r][c]).replace(".", "") for c in range(0, len(table[0]))] for r in range(0, len(table))]
 
     df = pd.DataFrame(data = clean_data)
+
+    isExist = os.path.exists(output_directory)
+
+    if not isExist:
+        os.makedirs(output_directory)
+
     df.to_csv("/".join([output_directory, file.replace(".tiff", ".csv")]), index=False, header = [str(row).translate(str.maketrans('', '', string.punctuation)) for row in labels])
 
     if SHOW_IMAGES:
