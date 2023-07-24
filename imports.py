@@ -11,8 +11,58 @@ import os
 import imutils
 import string
 
-SHOW_IMAGES = False
+SHOW_IMAGES = True
 
+def display(shapes, image):
+    i = image.copy()
+    i = cv2.drawContours(i, shapes, -1, (0, 255, 0), 10)
+
+    if SHOW_IMAGES:
+        cv2.imshow("shapes", cv2.resize(i, None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
+
+def get_heading(image, x, y, w, h):
+    columns = parse_cells(x, y, x+w, y + h, "", [])
+
+    return columns
+
+def split_table(image, orig, start_x, start_y, end_x, end_y):
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (end_x-start_x - 50, 1))
+    eroded_image = cv2.erode(~image, kernel, iterations=1)
+    vertical_lines = cv2.dilate(eroded_image, kernel, iterations=1)
+
+    if SHOW_IMAGES:
+        cv2.imshow("horizontal linesz", cv2.resize(vertical_lines, None, fx=0.25, fy=0.25))
+        cv2.waitKey(0)
+
+    # Find contours
+    cnts = cv2.findContours(vertical_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+    cnts = [c for c in cnts]
+    cnts.sort(reverse=False, key=sort_cnts)
+
+    #get bounding boxes for all contours
+    bb = [cv2.boundingRect(c) for c in cnts]
+
+    sections = [[cv2.boundingRect(cnts[c])[0],
+                 cv2.boundingRect(cnts[c])[1],
+                 cv2.boundingRect(cnts[c+1])[0] + cv2.boundingRect(cnts[c+1])[2] - cv2.boundingRect(cnts[c])[0],
+                 cv2.boundingRect(cnts[c+1])[1] + cv2.boundingRect(cnts[c+1])[3] - cv2.boundingRect(cnts[c])[1]] for c in range(0, len(cnts)-1)]
+
+
+    for s in sections:
+
+        s.append(s[3] > 500)
+
+        if SHOW_IMAGES:
+            cv2.imshow("section", cv2.resize(orig[s[1]:s[1]+s[3], s[0]:s[0]+s[2]], None, fx=0.25, fy=0.25))
+            cv2.waitKey(0)
+
+    return sections
+
+def sort_cnts(cnt):
+    rect = cv2.boundingRect(cnt)
+    return rect[0] + rect[1]
 def clean_str(s):
     return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "").replace("-", "")
 
@@ -51,9 +101,9 @@ def clean_cell(x, y, w, h):
         if h < 4 or w < 3:
             cell_im = cv2.drawContours(cell_im, [c], 0, (0, 0, 0), -1)
 
-    #if SHOW_IMAGES:
-        # cv2.imshow("clean", cell_im)
-        # cv2.waitKey(100)
+    if SHOW_IMAGES:
+        cv2.imshow("clean", cell_im)
+        cv2.waitKey(0)
 
     return cell_im
 
@@ -67,13 +117,16 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         cells = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         cells = cells[0] if len(cells) == 2 else cells[1]
+        cells = [c for c in cells if cv2.boundingRect(c)[2] > 10 and cv2.boundingRect(c)[3] > 10]
 
         if not cells:
             return cols
 
-        #if SHOW_IMAGES:
-            # cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
-            # cv2.waitKey(100)
+        if SHOW_IMAGES:
+            cv2.imshow('grid', image[y:g_h, x:edge])#cv2.resize(cls, None, fx=0.25, fy=0.25))
+            cv2.waitKey(0)
+
+            display(cells, image[y:g_h, x:edge])
 
         cell = cells[-1]
         cell_x, cell_y, cell_w, cell_h = cv2.boundingRect(cell)
@@ -90,12 +143,11 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         label = str(tb.correct())
 
         # if SHOW_IMAGES:
-        #if SHOW_IMAGES:
-            #   cv2.imshow(label, image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])  # cv2.resize(cls, None, fx=0.25, fy=0.25))
-            # cv2.waitKey(100)
+        # if SHOW_IMAGES:
+        #     display([cell], image[y+cell_y:y+cell_y+cell_h, x+cell_x:x+cell_x+cell_w])
 
         #if cell isn't as tall as the entire section, know there are subheadings. Parse those instead
-        if y + cell_y + cell_h < g_h - 10:
+        if y + cell_y + cell_h < g_h - 20:
             if append_label != "":
                 label = "\n".join([append_label, label])
 
@@ -200,18 +252,23 @@ for file in files:
     # load the input image and convert it to grayscale
     image = cv2.imread(file_path)
 
+    # color over any phantom lines that may have appeared at bottom and top of page from scanning
+    image = cv2.rectangle(image, (0, 0), (numpy.array(image).shape[1], 30), (255, 255, 255), -1)
+    image = cv2.rectangle(image, (0, numpy.array(image).shape[0] - 300),
+                          (numpy.array(image).shape[1], numpy.array(image).shape[0]), (255, 255, 255), -1)
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     img_bin_otsu = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 7)
 
     if SHOW_IMAGES:
         cv2.imshow('original', cv2.resize(image, None, fx=0.25, fy=0.25))
         # cv2.imshow('thresh', cv2.resize(img_bin_otsu, None, fx=0.25, fy=0.25))
-        cv2.waitKey(100)
+        cv2.waitKey(0)
 
     #extract tables
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
 
-    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, numpy.array(image).shape[1]//100))
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, numpy.array(image).shape[1]//150))
     eroded_image = cv2.erode(img_bin_otsu, vertical_kernel, iterations=3)
     vertical_lines = cv2.dilate(eroded_image, vertical_kernel, iterations=3)
     hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (numpy.array(image).shape[1]//100, 1))
@@ -237,7 +294,7 @@ for file in files:
 
     if SHOW_IMAGES:
         cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
-        cv2.waitKey(100)
+        cv2.waitKey(0)
     #
     #
     #if SHOW_IMAGES:
@@ -276,11 +333,11 @@ for file in files:
 
     if SHOW_IMAGES:
         cv2.imshow('lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
-        cv2.waitKey(100)
+        cv2.waitKey(0)
 
     if SHOW_IMAGES:
         cv2.imshow('vert', cv2.resize(~vertical_lines, None, fx=0.25, fy=0.25))
-        cv2.waitKey(100)
+        cv2.waitKey(0)
 
 
     #get individual vertical lines to extend as needed
@@ -442,8 +499,22 @@ for file in files:
 
     if SHOW_IMAGES:
         cv2.imshow('extended lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
-        cv2.waitKey(100)
+        cv2.waitKey(0)
 
+
+    #split table by full-width horizontal lines
+    sections = split_table(vertical_horizontal_lines, image, table_x, table_y, table_x1, table_y1)
+
+    columns = get_heading(vertical_horizontal_lines, sections[0][0],  sections[0][1],  sections[0][2],  sections[0][3])
+
+    #for remaining sections, are there any headings? If so, split by headings. If not, proceed as normal
+    if all([s[4] for s in sections[1:]]):
+        print("normal")
+    else:
+        subheading = get_heading(vertical_horizontal_lines, sections[1][0],  sections[1][1],  sections[1][2],  sections[1][3])
+
+        for c in columns:
+            c["label"] = "".join([c["label"], "\n", subheading[0]["label"]])
 
     #isolate table's cells
     cells = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -451,6 +522,9 @@ for file in files:
 
 
     thresh, no_lines = cv2.threshold(no_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+
+    get_heading(vertical_horizontal_lines, sections[0][0],  sections[0][1],  sections[0][2],  sections[0][3])
 
     #if SHOW_IMAGES:
         # cv2.imshow("no lines", cv2.resize(no_lines, None, fx=0.25, fy=0.25))
