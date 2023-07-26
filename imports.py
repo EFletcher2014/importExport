@@ -12,6 +12,9 @@ import string
 
 SHOW_IMAGES = True
 
+def handle_contours(cnts):
+    return cnts[0] if len(cnts) == 2 else cnts[1]
+
 def view(title, i, resize = False, pause = 100):
     if SHOW_IMAGES:
         if resize:
@@ -77,8 +80,7 @@ def clean_cell(x, y, w, h):
     cell_im = im_to_clean.copy()
 
     # Find contours, highlight text areas, and extract ROIs
-    cnts = cv2.findContours(mega_dilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+    cnts = handle_contours(cv2.findContours(mega_dilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE))
 
     c_dims = [cv2.boundingRect(cnt) for cnt in cnts]
 
@@ -105,9 +107,7 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
         return cols
     else:
         grid = vertical_horizontal_lines[y:g_h, x:edge]
-        cells = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-        cells = cells[0] if len(cells) == 2 else cells[1]
+        cells = handle_contours(cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE))
         cells = [cell for cell in cells if cv2.contourArea(cell) > 2500]
         cells.sort(reverse=True, key=sort_cells)
 
@@ -292,17 +292,11 @@ for file in files:
     vertical_lines = cv2.morphologyEx(vertical_lines, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
     temp, vertical_lines = cv2.threshold(vertical_lines,128,255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-
     view("lines", vertical_horizontal_lines, True)
     view("vert", ~vertical_lines, True)
 
-
     #get individual vertical lines to extend as needed
-    vert_lines = cv2.findContours(~vertical_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    vert_lines = vert_lines[0] if len(vert_lines) == 2 else vert_lines[1]
-
-
-
+    vert_lines = handle_contours(cv2.findContours(~vertical_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE))
 
     #extend vertical lines
     blank_image = numpy.zeros((image.shape[0], image.shape[1], 3), numpy.uint8)
@@ -313,7 +307,6 @@ for file in files:
     #add bounding box to horizontal lines, since we will treat it as horizontal lines
     horizontal_lines = ~horizontal_lines
     horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
-
 
     #view("hor", horizontal_lines, True)
 
@@ -378,8 +371,7 @@ for file in files:
 
     #view("hor_lines1", horizontal_lines, True)
 
-    hor_lines = cv2.findContours(~horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    hor_lines = hor_lines[0] if len(hor_lines) == 2 else hor_lines[1]
+    hor_lines = handle_contours(cv2.findContours(~horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE))
 
     for line in hor_lines:
         line_start = line[:, 0, 0].min()
@@ -414,8 +406,7 @@ for file in files:
     view("extended lines", vertical_horizontal_lines, True)
 
     #isolate table's cells
-    cells = cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    cells = cells[0] if len(cells) == 2 else cells[1]
+    cells = handle_contours(cv2.findContours(vertical_horizontal_lines, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE))
     cells = [cell for cell in cells if cv2.contourArea(cell) > 2500]
     cells.sort(reverse=True, key=sort_cells)
 
@@ -461,9 +452,8 @@ for file in files:
     view("dilate", dilate, True)
 
     # Find contours, highlight text areas, and extract ROIs
-    cnts = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = handle_contours(cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE))
     hierarchy = cv2.findContours(dilate, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[1]
-    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
 
     #get all possible lines
     text_lines = []
