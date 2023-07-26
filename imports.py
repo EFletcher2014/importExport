@@ -5,11 +5,9 @@ import numpy
 import math
 import statistics
 import pandas as pd
-import string
 from scipy import stats
 from textblob import TextBlob
 import os
-import imutils
 import string
 
 SHOW_IMAGES = False
@@ -93,8 +91,6 @@ def clean_cell(x, y, w, h):
         if w < avg_w/2 or w < 10 or h < 5:
             cell_im = cv2.drawContours(cell_im, [c], 0, (0, 0, 0), -1)
 
-    rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    # cell_im = cv2.dilate(cell_im, rect_kernel, iterations=1)
     if SHOW_IMAGES:
         cv2.imshow("clean", cell_im)
         cv2.waitKey(0)
@@ -155,8 +151,6 @@ def parse_cells(x, y, edge, g_h, append_label, cols):
                                 width = cell_w, label = "\n".join([append_label, label]), data = [], confs = []))
             parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
 
-        #move to next section
-        #parse_cells(x + cell_x + cell_w, y + cell_y, edge, g_h, append_label, cols)
         return cols
 
 def handle_overlaps(line_in, comp_lines):
@@ -169,10 +163,9 @@ def handle_overlaps(line_in, comp_lines):
         overlaps = [comp_line for comp_line in comp_lines if (line[0] > comp_line[0] and line[0] < comp_line[1]) or
                     (line[1] < comp_line[1] and line[1] > comp_line[0])]
 
-        # overlap = image[line[0]:line[1],
-        #           table_x:table_x1].copy()
-
         #if SHOW_IMAGES:
+            # overlap = image[line[0]:line[1],
+            #           table_x:table_x1].copy()
             # cv2.imshow(" ".join(["overlap: ", str(line[0]), str(line[1])]), overlap)
             # cv2.waitKey(100)
 
@@ -196,12 +189,13 @@ def split(line_in, comp_line, comp_lines):
     new_lines.append([max(line[0], comp_line[0]), min(line[1], comp_line[1])])
     new_lines.append([min(line[1], comp_line[1]), max(line[1], comp_line[1])])
 
-    # overlap = image[min(line[0], comp_line[0]): max(line[1], comp_line[1]),
-    #     table_x:table_x1].copy()
-    # overlap = cv2.rectangle(overlap, (0, line[0]-min(line[0], comp_line[0])), (table_x1, line[1] - min(line[0], comp_line[0])), color = (255, 0, 255), thickness = 5)
-    # overlap = cv2.rectangle(overlap, (0, comp_line[0] - min(line[0], comp_line[0])), (table_x1, comp_line[1] - min(line[0], comp_line[0])), color = (255, 255, 0), thickness = 3)
-    #
+
     #if SHOW_IMAGES:
+        # overlap = image[min(line[0], comp_line[0]): max(line[1], comp_line[1]),
+        #     table_x:table_x1].copy()
+        # overlap = cv2.rectangle(overlap, (0, line[0]-min(line[0], comp_line[0])), (table_x1, line[1] - min(line[0], comp_line[0])), color = (255, 0, 255), thickness = 5)
+        # overlap = cv2.rectangle(overlap, (0, comp_line[0] - min(line[0], comp_line[0])), (table_x1, comp_line[1] - min(line[0], comp_line[0])), color = (255, 255, 0), thickness = 3)
+        #
         # cv2.imshow(" ".join(["overlap: ", str(line[0]), str(line[1]), str(comp_line[0]), str(comp_line[1])]), overlap)
         # cv2.waitKey(100)
 
@@ -257,7 +251,6 @@ for file in files:
 
     if SHOW_IMAGES:
         cv2.imshow('original', cv2.resize(image, None, fx=0.25, fy=0.25))
-        # cv2.imshow('thresh', cv2.resize(img_bin_otsu, None, fx=0.25, fy=0.25))
         cv2.waitKey(100)
 
     #extract tables
@@ -292,8 +285,7 @@ for file in files:
     if SHOW_IMAGES:
         cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
         cv2.waitKey(100)
-    #
-    #
+
     #if SHOW_IMAGES:
         # cv2.imshow('original lines', cv2.resize(vertical_horizontal_lines, None, fx=0.25, fy=0.25))
         # cv2.waitKey(100)
@@ -305,22 +297,6 @@ for file in files:
     table_x1 = line_indices[1].max()
     table_y1 = line_indices[0].max()
     vertical_horizontal_lines = cv2.rectangle(vertical_horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 255, 0), 10)
-
-    # Detect lines using hough transform
-    # polar_lines = cv2.HoughLines(vertical_horizontal_lines, 1, numpy.pi / 180, 150)
-
-    # Detect the intersection points
-    # https://gist.github.com/arccoder/9a73e0b2d8be1a8fd42d6026d3a7a1e1
-    # import opencv_hough_lines as lq
-
-    # intersect_pts = opencv_hough_lines.hough_lines_intersection(polar_lines, gray.shape)
-    # # Sort the points in cyclic order
-    # intersect_pts = cyclic_intersection_pts(intersect_pts)
-    # # Draw intersection points and save
-    # out = color.copy()
-    # for pts in intersect_pts:
-    #     cv2.rectangle(out, (pts[0] - 1, pts[1] - 1), (pts[0] + 1, pts[1] + 1), (0, 0, 255), 2)
-    # cv2.imwrite('output/intersect_points.png', out)
 
     #clean up vertical lines for extending as necessary
     vertical_lines = cv2.erode(~vertical_lines, kernel, iterations=3)
@@ -345,30 +321,22 @@ for file in files:
 
 
     #extend vertical lines
-    # im = []
-    # longest = sorted(vert_lines, key = cv2.contourArea, reverse = True)[0]
     blank_image = numpy.zeros((image.shape[0], image.shape[1], 3), numpy.uint8)
     extended_lines = image.copy()
-    #
-    # M = cv2.moments(longest)
-    # theta = 0.5 * numpy.arctan2(2 * M["mu11"], M["mu20"] - M["mu02"])
-    # angle = 180/numpy.pi * theta
-    #
-    # rotated = imutils.rotate(vertical_horizontal_lines, angle-90)
-    #
+
     #if SHOW_IMAGES:
         # cv2.imshow("rotated", cv2.resize(rotated, None, fx=0.25, fy=0.25))
         # cv2.waitKey(100)
-    #
-    #
-    # blank_image = cv2.drawContours(blank_image, [longest], 0, (255, 255, 255), -1)
+
     #if SHOW_IMAGES:
+        # blank_image = cv2.drawContours(blank_image, [longest], 0, (255, 255, 255), -1)
         # cv2.imshow("first", cv2.resize(blank_image, None, fx=0.25, fy=0.25))
         # cv2.waitKey(100)
 
     #add bounding box to horizontal lines, since we will treat it as horizontal lines
     horizontal_lines = ~horizontal_lines
     horizontal_lines = cv2.rectangle(horizontal_lines, (table_x, table_y), (table_x1, table_y1), (0, 0, 0), 10)
+
     #if SHOW_IMAGES:
         # cv2.imshow('hor', cv2.resize(horizontal_lines, None, fx=0.25, fy=0.25))
         # cv2.waitKey(100)
@@ -395,7 +363,7 @@ for file in files:
         #if SHOW_IMAGES:
             # cv2.imshow('line', cv2.resize(vertical_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
             # cv2.waitKey(100)
-        #
+
         #if SHOW_IMAGES:
             # cv2.imshow('intersect', cv2.resize(vertical_horizontal_lines[:, x_start-5:x_end+5], None, fx=0.25, fy=0.25))
             # cv2.waitKey(0)
@@ -407,7 +375,7 @@ for file in files:
             extended_lines = cv2.line(extended_lines, (x_start - math.floor((line_start - indices_start[-1]) / slope), indices_start[-1]),
                                       (x_end, line_end), (0, 255, 0), 3)
             line_start = indices_start[-1]
-            # extended_lines = cv2.line(extended_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 255, 0), 3)
+
             #if SHOW_IMAGES:
                 # cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
                 # cv2.waitKey(100)
@@ -417,7 +385,7 @@ for file in files:
         if len(indices_end) > 0:
             line_end += indices_end[0]
             extended_lines = cv2.line(extended_lines, (x_start, line_start - indices_end[0]), (x_end, line_end), (0, 255, 0), 3)
-            # extended_lines = cv2.line(extended_lines, (x_start, min(line_end, line_start) - indices_end[0]), (x_end, line_end), (0, 255, 0), 3)
+
             #if SHOW_IMAGES:
                 # cv2.imshow('added', cv2.resize(extended_lines, None, fx=0.25, fy=0.25))
                 # cv2.waitKey(100)
@@ -427,8 +395,6 @@ for file in files:
                                              (x_end, line_end), (0, 0, 0), 3)
         vertical_lines = cv2.line(vertical_lines, (x_start, line_start),
                                              (x_end, line_end), (0, 0, 0), 3)
-        # vertical_horizontal_lines = cv2.line(vertical_horizontal_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 0, 0), 3)
-        # vertical_lines = cv2.line(vertical_lines, (x_start, min(line_end, line_start)), (x_end, max(line_end, line_start)), (0, 0, 0), 3)
 
     #highlight areas where lines were extended, then show new lines
     #if SHOW_IMAGES:
@@ -640,18 +606,10 @@ for file in files:
     for col in columns:
         col_im = no_lines[col["start_y"] + col["height"]:table_y1,
                     col["start_x"]:col["start_x"] + col["width"]]
-        # if col == columns[8] and SHOW_IMAGES:
-        #     cv2.imshow("col", cv2.resize(col_im, None, fx=0.25, fy=0.25))
-        #     cv2.waitKey(100)
 
         for line in text_lines_no_overlap:
 
             cell_im = clean_cell(col["start_x"], line[0], col["width"], line[1]-line[0])
-
-
-            # if col == columns[8] and SHOW_IMAGES:
-            #     cv2.imshow("cell", cv2.resize(cell_im, None, fx=0.25, fy=0.25))
-            #     cv2.waitKey(100)
 
             text, conf = parse_text(cell_im, num_only=(col != columns[0]))
 
@@ -669,7 +627,6 @@ for file in files:
         data[x*2] = columns[x]["data"]
         data[2*x+1] = columns[x]["confs"]
     table = numpy.array(data).T.tolist()
-    #data.insert(0, labels)
 
     #Clean data
     # first: find cells that are likely to contain relevant data, ignoring confidence values
@@ -688,7 +645,6 @@ for file in files:
                     clean_data[r][c] = str(table[r][c])
                 else:
                     clean_data[r][c] = str(table[r][c]).replace(".", "")
-        # [[clean_str(table[r][c]) if contain_data_col[c] == True else if str(table[r][c]).isnumeric() str(table[r][c]).replace(".", "") for c in range(0, len(table[0]))] for r in range(0, len(table))]
 
     df = pd.DataFrame(data = clean_data)
 
