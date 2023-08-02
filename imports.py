@@ -10,7 +10,7 @@ from textblob import TextBlob
 import os
 import string
 
-SHOW_IMAGES = True
+SHOW_IMAGES = False
 
 #cv2.findContours returns contours and hierarchy,
 #   but we normally only want contours. Strip hierarchy

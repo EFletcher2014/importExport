@@ -4,17 +4,22 @@ import math
 import os
 
 def clean_str(s):
-    return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "")
+    if ((isinstance(s, int) or isinstance(s, float)) and not math.isnan(s)) or (isinstance(s, str) and s.isnumeric()):
+        return str(int(s)).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "")
+    else:
+        return str(s).replace("\n", "").replace("$", "").replace(",", "").replace(" ", "").replace(".", "")
 
-def set_value(i, c, val):
+def set_value(i, c, val, conf):
     if "doll" in str(columns[c]).lower():
         output[i]["value"] = val
+        output[i]["conf_value"] = conf
         try:
             output[i]["value_measure"] = str(columns[c]).split("\n\n")[-2]
         except IndexError:
             output[i]["value_measure"] = ""
     else:
         output[i]["quantity"] = val
+        output[i]["conf_quantity"] = conf
         try:
             output[i]["quantity_measure"] = str(columns[c]).split("\n\n")[-2]
         except IndexError:
@@ -37,13 +42,11 @@ for f in files:
     columns = csv.columns.tolist()
 
     #find cells that are likely to contain relevant data
-    contain_data = [[clean_str(cell).isnumeric() for cell in row] for row in table]
+    conf_cols = [c for c in range(0, len(table[0])) if columns[c].replace("col", "").replace("CONF", "").isnumeric()]
+    contain_data = [[clean_str(row[c]).isnumeric() and c not in conf_cols for c in range(0, len(row))] for row in table]
     contain_data_row = [any(row) for row in contain_data]
     contain_data_col = [any([row[c] for row in contain_data]) for c in range(0, len(contain_data[0]))]
-    data = [table[r] for r in range(0, len(table)) if contain_data_row[r] == True]
-    #[[table[r][c] for c in range(0, len(table[0])) if contain_data_col[c] == True] for r in range(0, len(table)) if contain_data_row[r] == True]
-
-    clean_data = [[clean_str(data[r][c]) if contain_data_col[c] == True else data[r][c] for c in range(0, len(data[0]))] for r in range(0, len(data))]
+    confidences = [[row[c] for row in table] for c in conf_cols]
 
 
     #table originally organized as row representing country/locale and column representing imported merchandise
@@ -60,16 +63,16 @@ for f in files:
                 if len(output) > 0:
                     duplicates = [r["description"]=="\n\n".join(columns[c].split("\n\n")[0:-2]) and r["origin"] == row[0] for r in output]
                 if len(output) > 0 and len(duplicates) > 0 and any(duplicates):
-                    set_value(duplicates.index(True), c, row[c])
+                    set_value(duplicates.index(True), c, row[c], row[c+1])
                 else:
-                    output.append(dict(origin = row[0], destination = "United States of America",
-                                       value = None, value_measure = None,
-                                       quantity = None, quantity_measure = None,
+                    output.append(dict(origin = row[0], conf_origin = row[1], destination = "United States of America",
+                                       value = None, conf_value = None, value_measure = None,
+                                       quantity = None, conf_quantity = None, quantity_measure = None,
                                        description = "\n\n".join(columns[c].split("\n\n")[0:-2]),
                                        report_name = None,
                                        year = file_path.split("/")[-3],
                                        page_number = f.replace(".csv", "")))
-                    set_value(-1, c, row[c])
+                    set_value(-1, c, row[c], row[c+1])
 
 
     df = pd.DataFrame(data = output)
